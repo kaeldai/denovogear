@@ -18,3 +18,4 @@ foreach(test ${TESTS})
 endforeach(test)
 
 
+#add_test(TestSAM src/dng-call -f /home/kdai1/Data/denovogear/sample-5.3/sample-5.3_ref.fasta.gz -p /home/kdai1/Data/denovogear/ceu.ped -m 0.001 /home/kdai1/Data/denovogear/sample-5.3/test1.sam)

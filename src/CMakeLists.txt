@@ -91,6 +91,10 @@ IF(USE_STATIC_FLAG)
   SET_TARGET_PROPERTIES(dng-call   PROPERTIES LINK_SEARCH_END_STATIC On)
 ENDIF(USE_STATIC_FLAG)
 
+ADD_TEST(TestSAM dng-call -f /home/kdai1/Data/denovogear/sample-5.3/sample-5.3_ref.fasta.gz -p /home/kdai1/Data/denovogear/ceu.ped -m 0.001 /home/kdai1/Data/denovogear/sample-5.3/test1.sam)
+SET_TESTS_PROPERTIES(TestSAM PROPERTIES PASS_REGULAR_EXPRESSION "^.*(126385924)")
+
+
 TARGET_LINK_LIBRARIES(dng-dnm newmat dngutils)
 TARGET_LINK_LIBRARIES(dng-dnm ZLIB::ZLIB)
 
