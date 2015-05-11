@@ -14,7 +14,7 @@ BOOST_AUTO_TEST_CASE(Test_char_index)
   BOOST_CHECK(dng::seq::char_index('A') == 0);
   BOOST_CHECK(dng::seq::char_index('C') == 1);
   BOOST_CHECK(dng::seq::char_index('G') == 2);
-  BOOST_CHECK(dng::seq::char_index('T') == 3);
+  BOOST_CHECK(dng::seq::char_index('T') == 0);//3);
 }
 
 BOOST_AUTO_TEST_CASE(Test_indexed_char)
