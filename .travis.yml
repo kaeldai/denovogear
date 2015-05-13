@@ -15,7 +15,9 @@ before_script:
     - sudo apt-get install libboost-all-dev
     - wget -qO- https://github.com/samtools/htslib/releases/download/1.2.1/htslib-1.2.1.tar.bz2 | tar xj -C build/htslib/ --strip-components 1
     - cd build/htslib && sudo ./configure && sudo make && sudo make install && cd ../.. 
-    - sudo apt-get install -qq libeigen3-dev
+    - mkdir build/eigen
+    - wget -qO- http://bitbucket.org/eigen/eigen/get/3.2.4.tar.bz2 | tar xj -C build/eigen/ --strip-components 1 
+    - cd build/eigen && mkdir build_dir && cd build_dir && cmake .. && make install
 script:
     - cd build
     - ./new_cmake/bin/cmake -DBUILD_EXTERNAL_PROJECTS=1 ..
