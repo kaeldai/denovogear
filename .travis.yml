@@ -18,7 +18,8 @@ before_script:
     - mkdir build/eigen
     - wget -qO- http://bitbucket.org/eigen/eigen/get/3.2.4.tar.bz2 | tar xj -C build/eigen/ --strip-components 1 
     - cd build/eigen && mkdir build_dir && cd build_dir && sudo cmake .. && sudo make install && cd ~
-    - sudo git clone https://github.com/kaeldai/testdata.git ../testdata
+    - pwd
+#    - sudo git clone https://github.com/kaeldai/testdata.git ../testdata
 script:
     - cd ~/build
     - ./new_cmake/bin/cmake -DBUILD_EXTERNAL_PROJECTS=1 ..
