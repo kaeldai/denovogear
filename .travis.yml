@@ -20,7 +20,7 @@ before_script:
     - cd build/eigen && mkdir build_dir && cd build_dir && sudo cmake .. && sudo make install && cd ~
     - sudo git clone https://github.com/kaeldai/testdata.git ../testdata
 script:
-    - cd build
+    - cd ~/build
     - ./new_cmake/bin/cmake -DBUILD_EXTERNAL_PROJECTS=1 ..
     - make
     - make test
