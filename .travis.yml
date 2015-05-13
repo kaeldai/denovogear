@@ -9,7 +9,7 @@ install:
     - sudo apt-get install -qq gcc-4.8 g++-4.8 
     - sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-4.8 90
 before_script:
-    - ls
+    - pwd && ls
     - mkdir build/new_cmake
     - mkdir build/htslib
     - wget -qO- http://www.cmake.org/files/v3.1/cmake-3.1.0-Linux-x86_64.tar.gz | tar xz --strip-components 1 -C build/new_cmake/
@@ -18,8 +18,8 @@ before_script:
     - cd build/htslib && sudo ./configure && sudo make && sudo make install && cd ../.. 
     - mkdir build/eigen
     - wget -qO- http://bitbucket.org/eigen/eigen/get/3.2.4.tar.bz2 | tar xj -C build/eigen/ --strip-components 1 
-    - cd build/eigen && mkdir build_dir && cd build_dir && sudo cmake .. && sudo make install && cd ~
-    - ls
+    - cd build/eigen && mkdir build_dir && cd build_dir && sudo cmake .. && sudo make install && cd ../../..
+    - pwd && ls
 #    - sudo git clone https://github.com/kaeldai/testdata.git ../testdata
 script:
     - cd build
