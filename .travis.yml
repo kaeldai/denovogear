@@ -11,6 +11,7 @@ install:
 before_script:
     - mkdir build/new_cmake
     - wget -qO- http://www.cmake.org/files/v3.1/cmake-3.1.0-Linux-x86_64.tar.gz | tar xz --strip-components 1 -C build/new_cmake/
+    - sudo apt-get install libboost-all-dev
 script:
     - cd build
     - ./new_cmake/bin/cmake -DBUILD_EXTERNAL_PROJECTS=1 ..
