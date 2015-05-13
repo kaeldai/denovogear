@@ -24,4 +24,6 @@ script:
     - cd build
     - ./new_cmake/bin/cmake -DBUILD_EXTERNAL_PROJECTS=1 ..
     - make
+    - ls /home/travis/build/
+    - ls /home/travis/build/kaeldai/
     - make test
