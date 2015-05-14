@@ -91,6 +91,7 @@ IF(USE_STATIC_FLAG)
   SET_TARGET_PROPERTIES(dng-call   PROPERTIES LINK_SEARCH_END_STATIC On)
 ENDIF(USE_STATIC_FLAG)
 
+message(">> ${CMAKE_SOURCEDIR}")
 ADD_TEST(TestSAM dng-call -f ${CMAKE_SOURCE_DIR}/../testdata/sample_5_3/sample-5.3_ref.fasta.gz -p ${CMAKE_SOURCE_DIR}/../testdata/sample_5_3/ceu.ped -m 0.001 ${CMAKE_SOURCE_DIR}/../testdata/sample_5_3/test1.bam)
 SET_TESTS_PROPERTIES(TestSAM PROPERTIES PASS_REGULAR_EXPRESSION "^.*(126385924)")
 
