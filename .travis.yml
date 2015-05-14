@@ -15,6 +15,7 @@ before_script:
     - wget -qO- http://www.cmake.org/files/v3.1/cmake-3.1.0-Linux-x86_64.tar.gz | tar xz --strip-components 1 -C build/new_cmake/
 #    - sudo apt-get install libboost-all-dev
     - wget -qO- http://downloads.sourceforge.net/project/boost/boost/1.57.0/boost_1_57_0.tar.bz2 | sudo tar xj -C build/boost_install/
+    - pwd && ls && ls build && ls build/boost_install && ls build/boost_install/boost_1_57_0
     - cd build/boost_install/boost_1_57_0 
     - pwd && ls
     - sudo ./bootstrap.sh 
