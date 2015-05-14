@@ -27,7 +27,7 @@ cache:
   - build/htslib
 script:
     - cd build
-    - ./new_cmake/bin/cmake -DBOOST_ROOT=/usr/local/boost_1_57_0 ..
+    - ./new_cmake/bin/cmake -DBOOST_ROOT=/usr/local/ ..
 #    - ./new_cmake/bin/cmake -DBUILD_EXTERNAL_PROJECTS=1 ..
     - make
     - sudo make test
