@@ -14,8 +14,8 @@ before_script:
     - mkdir build/boost
     - wget -qO- http://www.cmake.org/files/v3.1/cmake-3.1.0-Linux-x86_64.tar.gz | tar xz --strip-components 1 -C build/new_cmake/
 #    - sudo apt-get install libboost-all-dev
-    - wget -qO- http://downloads.sourceforge.net/project/boost/boost/1.57.0/boost_1_57_0.tar.bz2 | sudo tar xj -C /build/boost/
-    - cd build/boost && sudo ./bootstrap.sh 
+    - wget -qO- http://downloads.sourceforge.net/project/boost/boost/1.57.0/boost_1_57_0.tar.bz2 | sudo tar xj -C build/boost_install/
+    - cd build/boost_install && sudo ./bootstrap.sh 
     - sudo ./b2 install && cd ../..
     - pwd && sudo ls /usr/local/boost_1_57_0/
     - wget -qO- https://github.com/samtools/htslib/releases/download/1.2.1/htslib-1.2.1.tar.bz2 | tar xj -C build/htslib/ --strip-components 1
