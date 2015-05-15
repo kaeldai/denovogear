@@ -30,6 +30,5 @@ cache:
 script:
     - cd build
     - ./new_cmake/bin/cmake  ..
-#    - ./new_cmake/bin/cmake -DBUILD_EXTERNAL_PROJECTS=1 ..
     - make
     - sudo make test
