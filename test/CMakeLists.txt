@@ -11,7 +11,8 @@ IF(NOT TEST_DATA_DIR)
   ELSEIF(IS_DIRECTORY ${CMAKE_SOURCE_DIR}/../testdata)
     SET(TEST_DATA_DIR ${CMAKE_SOURCE_DIR}/../testdata)
   ELSE(NOT TEST_DATA_DIR)
-    MESSAGE("Unable to find data for full package testing. Please set TEST_DATA_DIR")
+    # TODO: Add option to pull automatically
+    MESSAGE("Unable to find data for full package testing. Please download data from set TEST_DATA_DIR")
   ENDIF(IS_DIRECTORY ${CMAKE_SOURCE_DIR}/testdata)
 ENDIF(NOT TEST_DATA_DIR)
 SET(TEST_DATA_DIR /home/kdai1/workspace/testdata)
@@ -38,10 +39,6 @@ endforeach(test)
 
 ################################################################################
 # Full executable tests
-IF(NOT IS_DIRECTORY "${TEST_DATA_DIR}")
-  MESSAGE("Could not find directory ${TEST_DATA_DIR}. Full Package tests will fail")
-ENDIF()
-    
 ADD_TEST(Test_Help ${DNG_CALL_EXE})
 SET_TESTS_PROPERTIES(Test_Help PROPERTIES PASS_REGULAR_EXPRESSION "Usage:")
 
