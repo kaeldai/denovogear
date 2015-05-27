@@ -15,6 +15,7 @@ IF(NOT TEST_DATA_DIR)
   ENDIF(IS_DIRECTORY ${CMAKE_SOURCE_DIR}/testdata)
 ENDIF(NOT TEST_DATA_DIR)
 
+SET(DNG_DNM_EXE ${CMAKE_BINARY_DIR}/src/dng-dnm)
 
 ################################################################################
 # Compile unit tests
@@ -53,3 +54,17 @@ SET_TESTS_PROPERTIES(FullTest_Sample5.3_VCF PROPERTIES
   PASS_REGULAR_EXPRESSION "25,29,1"
   PASS_REGULAR_EXPRESSION "57,0,0"
   PASS_REGULAR_EXPRESSION "76,1,0")
+
+
+ADD_TEST(FullTest_SampleCEU_DNM ${DNG_DNM_EXE} auto --ped ${TEST_DATA_DIR}/sample_CEU/sample_CEU.ped --bcf ${TEST_DATA_DIR}/sample_CEU/sample_CEU.bcf --snp_mrate 2e-10 --indel_mrate 1e-11)
+SET_TESTS_PROPERTIES(FullTest_SampleCEU_DNM PROPERTIES
+  PASS_REGULAR_EXPRESSION "First mrate: 1 last: 1"
+  PASS_REGULAR_EXPRESSION "First code: 6 last: 6"
+  PASS_REGULAR_EXPRESSION "First tref: 0\.0002388 last: 0\.99301"
+  PASS_REGULAR_EXPRESSION "First prior: 0\.05 last: 0\.114"
+  PASS_REGULAR_EXPRESSION "Total number of SNP sites interrogated: 36"
+  PASS_REGULAR_EXPRESSION "Total number of SNP sites passing read-depth filters: 36")
+#DENOVO-SNP CHILD_ID: NA12878_vald-sorted.bam.bam chr: 2 pos: 214668360 ref: G alt: A maxlike_null: 3.95324e-12 pp_null: 0.0195898 tgt_null(child/mom/dad): GG/GG/GG snpcode: 1 code: 6 maxlike_dnm: 1.98602e-10 pp_dnm: 0.98041 tgt_dnm(child/mom/dad): AG/GG/GG lookup: 4 flag: 0 READ_DEPTH child: 48 dad: 76 mom: 34 MAPPING_QUALITY child: 59 dad: 59 mom: 59
+
+
+

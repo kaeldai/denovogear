@@ -389,6 +389,7 @@ int mainDNG(int argc, char *argv[]) {
         if(c == -1) {
             break;
         }
+
         switch(c) {
         case 0:
             ped_f = optarg;
