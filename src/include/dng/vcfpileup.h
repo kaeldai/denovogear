@@ -40,6 +40,8 @@
 #include <dng/cigar.h>
 #include <dng/read_group.h>
 
+#include <dng/hts/bcf.h>
+
 namespace dng {
 namespace pileup {
 namespace vcf {
@@ -47,26 +49,41 @@ namespace vcf {
 
 class VCFPileup {
 public:
-    typedef void (callback_type)(bcf_hdr_t *, bcf1_t *);
+    //typedef void (callback_type)(bcf_hdr_t *, bcf1_t *);
+    typedef void (callback_type)(hts::bcf::Variant&);
 
     VCFPileup() {
         // Not yet sure if ReadGroups should be passed in
     }
 
     template<typename Func>
-    void operator()(const char *fname, Func func);
+      void operator()(hts::bcf::File &vcf, Func func);
 
 private:
 
 };
 
 template<typename Func>
-void VCFPileup::operator()(const char *fname, Func func) {
+//void VCFPileup::operator()(const char *fname, Func func) {
+void VCFPileup::operator()(hts::bcf::File &vcf, Func func) {
     // TODO? If using multiple input vcf files then we may require scanners to search each file for the same position
+    // Note: synced_bcf_reader.h does exactly that
 
     // type erase callback function
     std::function<callback_type> call_back(func);
 
+    //auto rec = vcf.InitVariant();
+    vcf.InitReader();
+    //hts::bcf::Variant rec = vcf.GetRecords();
+    while(vcf.Next() > 0) {
+      std::cout << "HERE" << std::endl;
+      hts::bcf::Variant rec = vcf.GetRecord();
+      call_back(rec);
+      
+    }
+
+
+    /*
     // Open the VCF/BCF file
     htsFile *fp = hts_open(fname, "r");
     bcf_hdr_t *hdr = bcf_hdr_read(fp);
@@ -81,6 +98,7 @@ void VCFPileup::operator()(const char *fname, Func func) {
         // execute func
         call_back(hdr, rec);
     }
+    */
 }
 
 }

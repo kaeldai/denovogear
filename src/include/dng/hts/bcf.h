@@ -26,6 +26,7 @@
 #include <string>
 #include <set>
 #include <htslib/vcf.h>
+#include <htslib/synced_bcf_reader.h>
 
 extern "C" {
     // The htslib header does not match the library
@@ -45,19 +46,33 @@ public:
 
     Variant(const File &file);
 
+    Variant(const File &file, bcf1_t *rec);
+
     ~Variant() {
         bcf_empty1(base());
+	
+	//if(rec_ != nullptr)
+	//  bcf_destroy(rec_);
     }
 
     void Clear() {
         bcf_clear(base());
     }
 
+    void unpack() {
+      bcf_unpack(base(), BCF_UN_STR);
+    }
+
+
     // Getters
-    int32_t target_id() const { return rid; }
-    int32_t position() const { return pos; }
-    int32_t ref_length() const { return rlen; }
-    float quality() const { return qual; }
+    int32_t target_id() { return rec()->rid; }
+    const char *chrom() { return bcf_hdr_id2name(hdr(), rec()->rid); }
+    const int32_t position() { return rec()->pos; }
+    int32_t ref_length() { return rec()->rlen; }
+    int32_t n_alleles() { return rec()->n_allele; }
+    const int32_t n_samples() { return bcf_hdr_nsamples(hdr()); }
+    float quality() { return rec()->qual; }
+    char **alleles() { return rec()->d.allele; }
 
     // Setters
     void quality(float q) { qual = q; }
@@ -147,18 +162,34 @@ public:
         return samples(name, v);
     }
 
+
+
+
+
 protected:
     BareVariant *base() {return static_cast<BareVariant *>(this);}
     const BareVariant *base() const {return static_cast<const BareVariant *>(this);}
+    bcf1_t *rec() { 
+      if(rec_ == nullptr)
+	return this;
+      else
+	return rec_;
+    }
 
     const bcf_hdr_t *hdr() {
         // check if the header pointer has not been initialized
         assert(hdr_);
         return hdr_.get();
     }
+    
+
+
 
 private:
     std::shared_ptr<const bcf_hdr_t> hdr_;
+    bcf1_t *rec_;//, void(*)(bcf1_t *)> rec_;    
+    //std::unique_ptr<bcf1_t, void(*)(bcf1_t *)> rec_;
+    //std::unique_ptr<bcf1_t> rec_;
 
     friend class File;
 };
@@ -198,6 +229,8 @@ public:
             throw std::runtime_error("unable to access header in file '" + std::string(
                                          name()) + "'.");
         }
+	
+	reader_ = std::shared_ptr<bcf_srs_t>(bcf_sr_init(), bcf_sr_destroy);
     }
 
     File(const char *file, const char *mode) : File(hts::File(file, mode)) {
@@ -270,12 +303,33 @@ public:
         assert(rec.hdr() == hdr());
         bcf_write(handle(), hdr(), &rec);
     }
+
+    int InitReader() {
+      int ret = bcf_sr_add_reader(reader(), name());
+      return ret;
+    }
+
+    int Next() {
+      return bcf_sr_next_line(reader());
+    }
+
+    const Variant GetRecord() {
+      bcf1_t *rec = bcf_sr_get_line(reader(), 0);
+      return Variant{*this, rec};
+    }
+
+    
+
+
 protected:
     bcf_hdr_t *hdr() { return hdr_.get(); }
+    bcf_srs_t *reader() { return reader_.get(); }
 
 private:
     //std::shared_ptr<bcf_hdr_t, void(*)(bcf_hdr_t *)> hdr_;
     std::shared_ptr<bcf_hdr_t> hdr_;
+    std::shared_ptr<bcf_srs_t> reader_;
+    
 
 public:
     // Indicates type of mutation in VCF record
@@ -291,9 +345,14 @@ public:
 
 // NOTE: Need inline (or put into cpp file) otherwise will have clash when multiple source files
 // call bcf.h.
-inline Variant::Variant(const File &file) : BareVariant(), hdr_{file.hdr_} {
+ inline Variant::Variant(const File &file) : BareVariant(), hdr_{file.hdr_} {
   // NOOP
 }
+
+inline Variant::Variant(const File &file, bcf1_t *rec) : BareVariant(), hdr_{file.hdr_}, rec_{rec} {
+
+}
+
 
 
 }

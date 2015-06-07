@@ -37,8 +37,6 @@
 
 #include <unordered_set>
 
-#include <htslib/vcf.h>
-
 namespace dng {
 
 namespace rg {

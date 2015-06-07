@@ -440,13 +440,27 @@ int Call::operator()(Call::argument_type &arg) {
     } else if(cat == variant_data) {
         const char *fname = bcfdata[0].name();
         dng::pileup::vcf::VCFPileup vcfpileup;
-        vcfpileup(fname, [&](bcf_hdr_t *hdr, bcf1_t *rec) {
+        //vcfpileup(fname, [&](bcf_hdr_t *hdr, bcf1_t *rec) {
+	vcfpileup(bcfdata[0], [&](hts::bcf::Variant &record) {
             // Won't be able to access ref->d unless we unpack the record first
-            bcf_unpack(rec, BCF_UN_STR);
+            //bcf_unpack(rec, BCF_UN_STR);
+	    record.unpack();
 
             // get chrom, position, ref from their fields
+	    const char *chrom = record.chrom();
+	    int32_t position = record.position();
+	    int32_t n_alleles = record.n_alleles();
+	    int32_t n_samples = record.n_samples();
+	    std::cout << position << std::endl;
+
+	    //char **alleles = record.alleles();
+	    //const char ref_base = alleles[0][0];
+
+	    //std::cout << chrom << "\t" << position << "\t" << ref_base << std::endl;
+
+	    /*
             const char *chrom = bcf_hdr_id2name(hdr, rec->rid);
-            int32_t position = rec->pos;
+	    int32_t position = rec->pos;
             uint32_t n_alleles = rec->n_allele;
             uint32_t n_samples = bcf_hdr_nsamples(hdr);
             const char ref_base = *(rec->d.allele[0]);
@@ -472,8 +486,9 @@ int Call::operator()(Call::argument_type &arg) {
                     read_depths[sample_ndx].counts[a2i[allele_ndx]] = depth;
                 }
             }
+	    */
 
-            calculate(read_depths, chrom, position, ref_base);
+            //calculate(read_depths, chrom, position, ref_base);
         });
     } else {
         throw runtime_error("unsupported file category.");
