@@ -46,8 +46,8 @@
 #include <dng/hts/extra.h>
 #include <dng/vcfpileup.h>
 
-#include <htslib/faidx.h>
-#include <htslib/khash.h>
+//#include <htslib/faidx.h>
+//#include <htslib/khash.h>
 
 #include "version.h"
 
@@ -451,12 +451,33 @@ int Call::operator()(Call::argument_type &arg) {
 	    int32_t position = record.position();
 	    int32_t n_alleles = record.n_alleles();
 	    int32_t n_samples = record.n_samples();
-	    std::cout << position << std::endl;
+	    //std::cout << position << std::endl;
 
-	    //char **alleles = record.alleles();
-	    //const char ref_base = alleles[0][0];
+	    char **alleles = record.alleles();
+	    const char ref_base = alleles[0][0];
 
-	    //std::cout << chrom << "\t" << position << "\t" << ref_base << std::endl;
+	    std::cout << chrom << "\t" << position << "\t" << ref_base << std::endl;
+
+	    hts::bcf::sample_vals_int ad;
+	    record.get_samples("AD", ad);
+
+            // Create a map between the order of vcf alleles (REF+ALT) and their correct index in read_depths.counts[]
+            vector<size_t> a2i;
+            for(int a = 0; a < n_alleles; a++) {
+                char base = *alleles[a];
+                a2i.push_back(seq::char_index(base));
+            }
+
+            // Build the read_depths
+            read_depths.assign(n_samples, {0, 0});
+            for(size_t sample_ndx = 0; sample_ndx < n_samples; sample_ndx++) {
+                for(size_t allele_ndx = 0; allele_ndx < n_alleles; allele_ndx++) {
+                    int32_t depth = ad[sample_ndx][allele_ndx];
+                    read_depths[sample_ndx].counts[a2i[allele_ndx]] = depth;
+		    //std::cout << depth << ", ";
+                }
+		std::cout << std::endl;
+            }
 
 	    /*
             const char *chrom = bcf_hdr_id2name(hdr, rec->rid);
@@ -488,7 +509,7 @@ int Call::operator()(Call::argument_type &arg) {
             }
 	    */
 
-            //calculate(read_depths, chrom, position, ref_base);
+            calculate(read_depths, chrom, position, ref_base);
         });
     } else {
         throw runtime_error("unsupported file category.");

@@ -38,6 +38,8 @@ namespace bcf {
 
 typedef bcf1_t BareVariant;
 
+typedef std::vector<std::vector<int32_t>> sample_vals_int;
+
 class File;
 
 class Variant : protected BareVariant {
@@ -73,6 +75,21 @@ public:
     const int32_t n_samples() { return bcf_hdr_nsamples(hdr()); }
     float quality() { return rec()->qual; }
     char **alleles() { return rec()->d.allele; }
+
+    void get_samples(const char *name, sample_vals_int &vals) {
+      int *ad = NULL;
+      int n_ad_array = 0;
+      int n_ad = bcf_get_format_int32(hdr(), rec(), name, &ad, &n_ad_array);
+      
+      const int32_t n_s = n_samples();
+      vals.resize(n_s);
+      int sample_len = n_ad/n_s;
+      for(int a = 0; a < n_ad; a++) {
+	int sample_index = a/sample_len;
+	vals[sample_index].push_back(ad[a]);
+      }
+
+    }
 
     // Setters
     void quality(float q) { qual = q; }
