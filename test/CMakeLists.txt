@@ -30,8 +30,13 @@ IF(NOT Boost_USE_STATIC_LIBS)
   add_definitions(-DBOOST_TEST_DYN_LINK)
 ENDIF()
 
-# Make a test for each unit test file located in test/ dir
-file(GLOB_RECURSE TESTS test_*[cc|cpp])
+#add_library(dnglib
+#  ../src/lib/pedigree.cc
+#)
+
+# Make a test for each unit test file located in test/src/include dir.
+# These should be only h files and don't require the dng source files
+file(GLOB_RECURSE TESTS src/include/*test_*[cc|cpp])
 foreach(test ${TESTS})
   get_filename_component(testName ${test} NAME_WE)
   add_executable(${testName} EXCLUDE_FROM_ALL ${test})
@@ -54,8 +59,28 @@ foreach(test ${TESTS})
   ENDIF(ZLIB_FOUND)
   add_test(${testName}_build "${CMAKE_COMMAND}" --build ${CMAKE_BINARY_DIR} --target ${testName})
   add_test(${testName}_run ${testName})
+  #target_link_libraries(${testName} dnglib)
+
   set_tests_properties(${testName}_run PROPERTIES DEPENDS ${testName}_build)
 endforeach(test)
+
+################################################################################
+# unit test cases for the source files (src/lib). Requires manual linking
+
+# Test for the pedigree peeler (lib/pedigree.cc and include/dng/pedigree.cc)
+add_executable(test_pedigree EXCLUDE_FROM_ALL src/lib/test_pedigree.cc ../src/lib/pedigree.cc ../src/lib/newick.cc)
+set_target_properties(test_pedigree PROPERTIES CXX_STANDARD 11)
+set_target_properties(test_pedigree PROPERTIES CXX_STANDARD_REQUIRED ON)
+target_link_libraries(test_pedigree Threads::Threads)
+target_link_libraries(test_pedigree 
+  ${Boost_PROGRAM_OPTIONS_LIBRARY}  
+  ${Boost_FILESYSTEM_LIBRARY}
+  ${Boost_SYSTEM_LIBRARY}
+  ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY}
+)
+target_link_libraries(test_pedigree ${HTSLIB_LIBRARIES})
+add_test(test_pedigree_build "${CMAKE_COMMAND}" --build ${CMAKE_BINARY_DIR} --target test_pedigree)
+add_test(test_pedigree_run test_pedigree)
 
 ################################################################################
 # Full executable tests
@@ -67,7 +92,7 @@ IF(NOT DEFINED DNG_VERSION_COMMIT OR DNG_VERSION_COMMIT STREQUAL "unknown")
     SET(DATA_PACKAGE "${DATA_PACKAGE}.${DNG_VERSION_PATCH}")
   ENDIF()
   SET(DATA_PACKAGE "${DATA_PACKAGE}.tar.gz")
-  SET(DOWNLOAD_URL "https://github.com/kaeldai/testdata/archive/${DATA_PACKAGE}")
+  SET(DOWNLOAD_URL "https://github.com/denovogear/testdata/archive/${DATA_PACKAGE}")
 ENDIF()
 
 IF(NOT DEFINED TEST_DATA_DIR)
@@ -82,7 +107,7 @@ IF(DEFINED DOWNLOAD_URL)
     PREFIX "testdata"
     EXCLUDE_FROM_ALL 1
     DOWNLOAD_DIR "${TEST_DATA_DIR}"
-    URL "https://github.com/kaeldai/testdata/archive/${DATA_PACKAGE}"
+    URL "https://github.com/kaeldai/denovogear/archive/${DATA_PACKAGE}"
     SOURCE_DIR "${TEST_DATA_DIR}"
     CONFIGURE_COMMAND ""
     BUILD_COMMAND ""
