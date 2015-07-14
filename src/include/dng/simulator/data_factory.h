@@ -11,6 +11,8 @@
 #include <stdlib.h>
 #include <dng/io/ped.h>
 #include <boost/format.hpp>
+#include <random>
+#include <math.h>
 
 
 
@@ -31,6 +33,7 @@ namespace dng {
     // Used to keep track of differences between member's DNA and the reference
     typedef std::unordered_map<size_t, char> reference_map;
 
+    typedef std::array<double, 16> genotype_dist;
 
     // Format of output data file. 'None' indicates only PED file is generated.
     enum DataFormat { VCF, BCF, SAM, BAM, CRAM, None };
@@ -92,6 +95,22 @@ namespace dng {
 	  c1.insert({site, newNuc});
 	else
 	  c2.insert({site, newNuc});
+      }
+
+      void inheritDNA(Member *mom, Member *dad) {
+	int cn = rand() % 2;
+	reference_map chrm1 = (cn == 0 ? mom->c1 : mom->c2);
+	cn = rand() % 2;
+	reference_map chrm2 = (cn == 0 ? dad->c1 : dad->c2);
+	cn = rand() % 2;
+	if(cn == 0) {
+	  c1 = reference_map(chrm1);
+	  c2 = reference_map(chrm2);
+	}
+	else{
+	  c1 = reference_map(chrm2);
+	  c2 = reference_map(chrm1);
+	}
       }
 
       char getNuc(int cc, size_t site) {
@@ -223,9 +242,302 @@ namespace dng {
       }
 
       
+      
+      //genotype_dist genotype_probs(char ref, double theta, std::array<double, 4> nuc_freq, std::array<double,4> prior) {
+      genotype_dist genotype_weights(double theta, std::array<double, 4> nuc_freq, std::array<double,4> prior) {
+	std::array<double, 16> weights;
+	//Eigen::Array<double, 16, 1> weights;
+	//dng::GenotypeArray ret{10};
+	//double weights[16];
+	double alpha[4] = {
+	  theta *nuc_freq[0] + prior[0], theta *nuc_freq[1] + prior[1],
+	  theta *nuc_freq[2] + prior[2], theta *nuc_freq[3] + prior[3]
+	};
+	double alpha_sum = alpha[0] + alpha[1] + alpha[2] + alpha[3];
+	double alpha_sum2 = (alpha_sum + alpha_sum*alpha_sum);
+
+	// chromatid pattern will matter in heritence, so when we randomly assign a parent a heterozygous site A/T != T/A 
+	weights[0]  = (alpha[0] + alpha[0]*alpha[0]) / alpha_sum2; // AA
+	weights[1]  = alpha[0]*(alpha[1]) / alpha_sum2; // AC
+	weights[2]  = alpha[0]*(alpha[2]) / alpha_sum2; // AG
+	weights[3]  = alpha[0]*(alpha[3]) / alpha_sum2; // AT
+
+	weights[4]  = weights[1]; // CA
+	weights[5]  = (alpha[1] + alpha[1]*alpha[1]) / alpha_sum2; // CC
+	weights[6]  = alpha[1]*(alpha[2]) / alpha_sum2; // CG
+	weights[7]  = alpha[1]*(alpha[3]) / alpha_sum2; // CT
+
+	weights[8]  = weights[2]; // GA 
+	weights[9]  = weights[6]; // GC 
+	weights[10] = (alpha[2] + alpha[2]*alpha[2]) / alpha_sum2; // GG
+	weights[11] = alpha[2]*(alpha[3]) / alpha_sum2; // GT 
+
+	weights[12] = weights[3]; // TA 
+	weights[13] = weights[7]; // TC 
+	weights[14] = weights[11]; // TG
+	weights[15] = (alpha[3] + alpha[3]*alpha[3]) / alpha_sum2; // TT
+	
+	return weights;
+
+	/*
+	std::cout << "  " << ref << " :";
+	for(int a = 0; a < 16; a++) {
+	  std::cout << weights[a] << "\t";
+	}
+	std::cout << std::endl;
+
+	double interval[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+	std::piecewise_constant_distribution<> dist(std::begin(interval), std::end(interval), weights.begin());// std::begin(weights));
+	std::random_device rd;
+	std::mt19937 gen(rd());
+	std::cout << dist(gen) << std::endl;
+	*/
+
+	//std::cout << "  " << ref << " : " << weights << std::endl;
+
+
+	/*
+	for(int nuc1 = 0; nuc1 < 4; nuc1++) {
+	  for(int nuc2 = 0; nuc2 < 4; nuc2++) {
+	    double alp_ = alpha[nuc1]*alpha[nuc2];
+	    if(nuc1 == nuc2)
+	      
+	  }
+	}
+	*/
+
+	      /*
+	weights[0] = alpha[0]*(1.0 + alpha[0]) / alpha_sum2; // AA
+	weights[1]  2.0 * alpha[0]*(alpha[1]) / alpha_sum2, // AC
+	  2.0 * alpha[0]*(alpha[2]) / alpha_sum2, // AG
+	  2.0 * alpha[0]*(alpha[3]) / alpha_sum2, // AT
+	  alpha[1]*(1.0 + alpha[1]) / alpha_sum2, // CC
+	  2.0 * alpha[1]*(alpha[2]) / alpha_sum2, // CG
+	  2.0 * alpha[1]*(alpha[3]) / alpha_sum2, // CT
+	  alpha[2]*(1.0 + alpha[2]) / alpha_sum2, // GG
+	  2.0 * alpha[2]*(alpha[3]) / alpha_sum2, // GT
+	  alpha[3]*(1.0 + alpha[3]) / alpha_sum2; // TT
+	//return ret;
+	std::cout << "  " << ref << " : " << weights.transpose() << std::endl;
+
+	double interval[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
+	double weightsd[] = weights.transpose().data();
+	//std::piecewise_constant_distribution<> dist(std::begin(interval), std::end(interval), std::begin(weights));
+	*/
+      }
+
+      int Allele2Index(char c) {
+	int ret = 4;
+	switch(c) {
+	case 'a':
+	case 'A': ret = 0; break;
+	case 'c':
+	case 'C': ret = 1; break;
+	case 'g':
+	case 'G': ret = 2; break;
+	case 't':
+	case 'T': ret = 3; break;
+	}
+	return ret;
+      }
+      
+      std::pair<char, char> index2Genotype(int index) {
+	std::vector<std::pair<char, char>> genotypes = {{'A','A'}, {'A','C'}, {'A','G'}, {'A','T'},
+							{'C','A'}, {'C','C'}, {'C','G'}, {'C','T'},
+							{'G','A'}, {'G','C'}, {'G','G'}, {'G','T'},
+							{'T','A'}, {'T','C'}, {'T','G'}, {'T','T'}};
+	return genotypes[index];
+      }
+
+      void createFounderGenotypes() {
+	genotype_dist ref_weights[] = { genotype_weights(theta_, nuc_freqs_, {ref_weight_, 0, 0, 0}),
+					genotype_weights(theta_, nuc_freqs_, {0, ref_weight_, 0, 0}),
+					genotype_weights(theta_, nuc_freqs_, {0, 0, ref_weight_, 0}),
+					genotype_weights(theta_, nuc_freqs_, {0, 0, 0, ref_weight_})};
+
+	std::vector<std::piecewise_constant_distribution<>> dists;
+	double interval[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+	dists.emplace_back(std::begin(interval), std::end(interval), ref_weights[0].begin());
+	dists.emplace_back(std::begin(interval), std::end(interval), ref_weights[1].begin());
+	dists.emplace_back(std::begin(interval), std::end(interval), ref_weights[2].begin());
+	dists.emplace_back(std::begin(interval), std::end(interval), ref_weights[3].begin());
+
+	/*
+	std::piecewise_constant_distribution<> distA(std::begin(interval), std::end(interval), ref_weights[0].begin());
+	std::piecewise_constant_distribution<> distC(std::begin(interval), std::end(interval), ref_weights[1].begin());
+	std::piecewise_constant_distribution<> distG(std::begin(interval), std::end(interval), ref_weights[2].begin());
+	std::piecewise_constant_distribution<> distT(std::begin(interval), std::end(interval), ref_weights[3].begin());
+	*/
+
+	std::cout << "           ";
+	for(int a = 0; a*10 < reference.size(); a++) {
+	  std::cout << a << "        ";
+	}
+	std::cout << std::endl;
+	std::cout << "reference: " << reference << std::endl;
+	std::random_device rd;
+	std::mt19937 gen(rd());
+	for(int a = 0; a < members.size(); a++) {
+	  Member *m = members[a];
+	  if(m->mom == NULL && m->dad == NULL) {
+	    for(int b = 0; b < reference.size(); b++) {
+	      char ref = reference[b];
+	      int ref_idx = Allele2Index(ref);
+	      std::pair<char, char> genotype = index2Genotype(floor(dists[ref_idx](gen)));
+	      if(genotype.first != ref) {
+		m->updateDNA(1, b, genotype.first);
+	      }
+	      if(genotype.second != ref) {
+		m->updateDNA(2, b, genotype.second);
+	      }
+	    }
+	    m->hasDNA = true;
+	  }
+	  
+	  // PRINTING
+	  if(m->mom == NULL && m->dad == NULL)
+	  {
+	    std::cout << m->name << "   : ";
+	    for(size_t a = 0; a < reference.size(); a++) {
+	      std::cout << m->getNuc(1, a);
+	    }
+	    std::cout << std::endl;
+	    
+	    std::cout << "           ";
+	    for(size_t a = 0; a < reference.size(); a++) {
+	      std::cout << m->getNuc(2, a);
+	    }
+	    std::cout << std::endl;
+	  }
+
+	}
+
+	/*
+	genotype_dist weights_refA = genotype_weights(theta_, nuc_freqs_, {ref_weight_, 0, 0, 0});
+	genotype_dist weights_refC = genotype_weights(theta_, nuc_freqs_, {0, ref_weight_, 0, 0});
+	genotype_dist weights_refG = genotype_weights(theta_, nuc_freqs_, {0, 0, ref_weight_, 0});
+	genotype_dist weights_refT = genotype_weights(theta_, nuc_freqs_, {0, 0, 0, ref_weight_});
+	double interval[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+	std::piecewise_constant_distribution<> dist(std::begin(interval), std::end(interval), weights.begin());// std::begin(weights));
+	std::random_device rd;
+	std::mt19937 gen(rd());
+	*/
+      }
+
+      inline char transition(char nuc){ 
+	char ret;
+	switch(nuc) {
+	case 'A': ret = 'G'; break;
+	case 'G': ret = 'A'; break;
+	case 'C': ret = 'T'; break;
+	case 'T': ret = 'C'; break;
+	default: ret = 'N';
+	}
+	return ret;
+      }
+      
+      inline char transversion(char nuc){
+	char options[2][2] = {{'C', 'T'}, {'A','G'}};
+	int r = rand() % 2;
+	if(nuc == 'A' || nuc == 'G') {
+	  return options[0][r];
+	}
+	else {
+	  return options[1][r];
+	}
+      }
+    
+
+      void createChildrenDNA() {
+
+	double interval[] = {0, 1, 2, 3};
+	double probs[] =  {transitons_mut_, transversion_mut_, (1.0 - transitons_mut_ - transversion_mut_)};
+	std::piecewise_constant_distribution<> dist(std::begin(interval), std::end(interval), std::begin(probs));
+	std::random_device rd;
+	std::mt19937 gen(rd());
+	int remaining_members = 0;
+	do {
+	  for(int a = 0; a < members.size(); a++) {
+	    Member *m = members[a];
+	    if(m->hasDNA == true)
+	      continue;
+	    else if(!m->dad->hasDNA || !m->mom->hasDNA) {
+	      remaining_members++;
+	      continue;
+	    }
+	    else {
+	      m->inheritDNA(m->mom, m->dad);
+	      for(int b = 0; b < reference.size(); b++) {
+		//char ref = reference[b];
+		//int ref_idx = Allele2Index(ref);
+		//std::pair<char, char> genotype = index2Genotype(floor(dists[ref_idx](gen)));
+		int mut_type = floor(dist(gen));
+		//std::cout << mut_type << std::endl;
+		if(mut_type == 2)
+		  continue;
+		else if(mut_type == 0) {
+		  char oldbase = m->getNuc(1, b);
+		  if(oldbase == ' ')
+		    oldbase = reference[b];
+		  char newbase = transition(oldbase);
+		  m->updateDNA(1, b, newbase);
+
+		}
+		else if(mut_type == 1) {
+		  char oldbase = m->getNuc(1, b);
+		  if(oldbase == ' ')
+		    oldbase = reference[b];
+		  char newbase = transversion(oldbase);
+		  m->updateDNA(1, b, newbase);
+		  //std::cout << "Transversion at " << b << std::endl;
+		}
+
+	      }
+	      std::cout << m->name << "   : ";
+	      for(size_t a = 0; a < reference.size(); a++) {
+		std::cout << m->getNuc(1, a);
+	      }
+	      std::cout << std::endl;
+	      
+	      std::cout << "           ";
+	      for(size_t a = 0; a < reference.size(); a++) {
+		std::cout << m->getNuc(2, a);
+	      }
+	      std::cout << std::endl;
+	      
+	    }
+	  }
+	} while(remaining_members > 0);
+
+      }
+
+
       void publishData() {
 
-	std::cout << "reference: " << reference << std::endl;
+	createFounderGenotypes();
+	createChildrenDNA();
+
+	
+
+	
+	/*
+	std::cout.precision(5);
+	std::cout << std::fixed;
+	std::cout << "Ref :\tAA\tAC\tAG\tAT\tCA\tCC\tCG\tCT\tGA\tGC\tGG\tGT\tTA\tTC\tTG\tTT" << std::endl;
+	*/
+	/*
+	genotype_probs('A', theta_, nuc_freqs_, {ref_weight_, 0, 0, 0});
+	genotype_probs('C', theta_, nuc_freqs_, {0, ref_weight_, 0, 0});
+	genotype_probs('G', theta_, nuc_freqs_, {0, 0, ref_weight_, 0});
+	genotype_probs('T', theta_, nuc_freqs_, {0, 0, 0, ref_weight_});
+	genotype_probs('N', theta_, nuc_freqs_, {0, 0, 0, 0});
+	*/
+
+	/*
+	std::cout << std::endl << std::endl;
+
+
+
 	for(int a = 0; a < members.size(); a++) {
 	  Member *m = members[a];
 	  if(m->mom == NULL && m->dad == NULL) {
@@ -284,7 +596,9 @@ namespace dng {
 	    }
 	  }
 	} while(remaining_members > 0);
-	       
+	*/
+	
+
 
 	// Get Reference
 	// for each root (founders) parents, 
@@ -397,6 +711,11 @@ namespace dng {
       // TODO: Either keep reference in file stream, or compact into 2 bits.
       std::string reference;
       double pop_prior_mutation = .1;
+      double theta_ = 0.1;
+      std::array<double, 4> nuc_freqs_ = {0.3, 0.2, 0.2, 0.3};
+      double ref_weight_ = 1.0;
+      double transitons_mut_ = 0.015;
+      double transversion_mut_ = 0.005;
 
     };
 
