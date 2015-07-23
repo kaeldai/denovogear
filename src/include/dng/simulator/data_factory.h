@@ -38,6 +38,8 @@ namespace dng {
     // Format of output data file. 'None' indicates only PED file is generated.
     enum DataFormat { VCF, BCF, SAM, BAM, CRAM, None };
 
+    enum Nucleotide : uint8_t { A = 0, C, G, T, N, REF, UNASSIGNED };
+
     // The number of data files generated.
     // TODO: Currenlty only one large file implemented
     enum FileScheme { 
@@ -64,6 +66,10 @@ namespace dng {
       typedef std::unordered_map<size_t, char> reference_map;
       reference_map c1;
       reference_map c2;
+      reference_map library;
+      //std::vector<reference_map> library_mutations;
+      //reference_map somatic1;
+      //reference_map somatic2;
 
       Member(member_id mid_, family_id fid_, Gender sex_) : mid(mid_), fid(fid_), sex(sex_) {
 	name = (boost::format("NA%04d") % mid).str();
@@ -133,7 +139,13 @@ namespace dng {
 	//return 'N';
       }
 
-      void addLibrary(std::string &lname) {
+      void addLibrary() {
+
+      }
+
+      void somatic_mutation(int chrom, int site, char nuc) {
+	library[site*chrom] = nuc;
+	//char nuc = getNuc(chrom, site);
 
       }
 
@@ -341,6 +353,20 @@ namespace dng {
 	return ret;
       }
       
+      char Index2Allele(int indx) {
+	char ret;
+	switch(indx) {
+	case 0: ret = 'A'; break;
+	case 1: ret = 'C'; break;
+	case 2: ret = 'G'; break;
+	case 3: ret = 'T'; break;
+	}
+
+	return ret;
+      }
+
+      
+
       std::pair<char, char> index2Genotype(int index) {
 	std::vector<std::pair<char, char>> genotypes = {{'A','A'}, {'A','C'}, {'A','G'}, {'A','T'},
 							{'C','A'}, {'C','C'}, {'C','G'}, {'C','T'},
@@ -511,12 +537,58 @@ namespace dng {
 
       }
 
+      void createLibraryMutations() {
+	std::uniform_real_distribution<double> unif(0, 1.0);
+	std::random_device rd;
+
+
+	double interval[] = {0, 1, 2, 3};
+	//double probs[] =  {transitons_mut_, transversion_mut_, (1.0 - transitons_mut_ - transversion_mut_)};
+	double probs[] = {0.33333, 0.33333, 1.0-0.66666};
+	std::piecewise_constant_distribution<> dist(std::begin(interval), std::end(interval), std::begin(probs));
+	std::random_device rd1;
+	std::mt19937 gen(rd1());
+
+	char options[4][3] = {{'C','G','T'}, {'A', 'G', 'T'}, {'A', 'C', 'T'}, {'A', 'C', 'G'}};
+	
+	for(int a = 0; a < members.size(); a++) {
+	  for(int chromosome : {1, 2}) {
+	    for(int b = 0; b < reference.size(); b++) {
+	      Member *m = members[a];
+	      double prob = unif(rd);
+	      if(prob <= somatic_mutation_rate_) {
+		char nuc = m->getNuc(chromosome, b);
+		if(nuc == ' ') {
+		  nuc = reference[b];
+		}
+		int nuc_indx = 0;
+		if(nuc == 'C')
+		  nuc_indx = 1;
+		else if(nuc == 'G')
+		  nuc_indx = 2;
+		else if(nuc == 'T')
+		  nuc_indx = 3;
+
+		//std::piecewise_constant_distribution<> dist(std::begin(options[nuc_indx]), std::end(options[nuc_indx]), std::begin(probs));
+		int opt = floor(dist(gen));
+		char newnuc = options[nuc_indx][opt];
+		m->somatic_mutation(chromosome, b, newnuc);
+
+		//std::cout << nuc << " --> " << newnuc << std::endl;
+	      } 
+	    }
+	  }
+	}
+      }
+
 
       void publishData() {
 
 	createFounderGenotypes();
 	createChildrenDNA();
-
+	createLibraryMutations();
+	//publishVCFData();
+	
 	
 
 	
@@ -617,9 +689,61 @@ namespace dng {
       }
 
 
+
+      std::array<size_t, 4> depth_count(Member *m, size_t pos) {
+	char ref = reference[pos];
+	char allele1 = m->getNuc(1, pos);
+	if(allele1 == ' ')
+	  allele1 = ref;
+
+	char allele2 = m->getNuc(2, pos);
+	if(allele2 == ' ')
+	  allele2 = ref;
+
+	double interval[] = {0, 1, 2, 3, 4};
+	std::array<double, 4> probs;
+	if(allele1 == allele2) {
+	  double e = (1.0-homozygote_match_)/3.0;
+	  probs = {e, e, e, e};
+	  probs[Allele2Index(allele1)] = homozygote_match_;
+	}
+	else {
+	  double e = (1.0-heterozygote_match_)/2.0;
+	  probs = {e, e, e, e};
+	  probs[Allele2Index(allele1)] = homozygote_match_/2.0;
+	  probs[Allele2Index(allele2)] = homozygote_match_/2.0;
+	}
+
+	std::piecewise_constant_distribution<> dist(std::begin(interval), std::end(interval), std::begin(probs));
+	std::random_device rd;
+	std::mt19937 gen(rd());
+
+	
+	std::array<size_t, 4> ret = {0, 0, 0, 0};
+	for(int a = 0; a < depth; a++) {
+	  ret[floor(dist(gen))]++;
+	}
+
+	/*
+	std::cout << "-----" << std::endl;
+	std::cout << "depth = " << depth << std::endl;
+	for(int a : ret) {
+	  std::cout << a << ",";
+	}
+	std::cout << std::endl << "-----" << std::endl;
+	*/
+
+	return ret;
+	//return {5, 4, 0, 1};
+	
+
+      }
+
+
       void publishVCFData(std::string &file) {
 	hts::bcf::File out(file.c_str(), "w");
 	out.AddHeaderMetadata("##fileformat=VCFv4.2");
+	out.AddHeaderMetadata("##FORMAT=<ID=AD,Number=.,Type=Integer,Description=\"Allelic depths for the ref and alt alleles in the order listed\">");
 	out.AddContig("1", 243199373);
 	for(int a = 0; a < members.size(); a++) {
 	  Member *mem = members[a];
@@ -628,6 +752,88 @@ namespace dng {
 	}
 	out.WriteHeader();
 
+	for(size_t pos  = 0; pos < reference.size(); pos++) {
+	  //hts::bcf::Variant rec = out.InitVariant();
+	  //rec.target("1");
+	  //rec.position(pos);
+	  char ref = reference[pos];
+	  int ref_indx = Allele2Index(ref);
+	  int gt_totals[4] = {0, 0, 0, 0};
+	  int total_reads = 0;
+	  std::vector<int> gtcounts(members.size()*4);
+	  for(size_t m = 0; m < members.size(); m++) {
+	    Member *mem = members[m];
+	    std::array<size_t, 4> counts = depth_count(mem, pos);
+	    for(int a : {0, 1, 2, 3}) {
+	      gtcounts[m*4+a] = counts[a];
+	      gt_totals[a] += counts[a];
+	      total_reads += counts[a];
+	    }
+	  }
+
+	  /*
+	  std::cout << ">> ";
+	  for(int a : gtcounts)
+	    std::cout << a << ",";
+	  std::cout << std::endl;
+	  */
+
+	  std::vector<int> allele_order_map;
+	  allele_order_map.push_back(ref_indx);
+	  for(int a = 1; a < 4; a++) {
+	    int index = (ref_indx + a)%4;
+	    if(gt_totals[index] > 0) {
+	      //std::cout << "HERE at " << index << " having " << gt_totals[index] << "reads." << std::endl;
+	      allele_order_map.push_back(index);
+	    }
+	  }
+
+	  if(allele_order_map.size() == 1)
+	    continue;
+
+
+	  hts::bcf::Variant rec = out.InitVariant();
+	  rec.target(chrom.c_str());
+	  rec.position(pos);
+
+	  std::string allele_order_str;
+	  allele_order_str = ref;
+	  for(int indx = 1; indx < allele_order_map.size(); indx++) {
+	    allele_order_str += std::string(",") + Index2Allele(allele_order_map[indx]);
+	  }
+
+	  rec.info("LL", static_cast<float>(1.0));
+
+	  rec.alleles(allele_order_str);
+
+	  //std::cout << "HERE" << std::endl;
+
+	  
+	  std::vector<int32_t> allele_depths;
+	  for(int m_indx = 0; m_indx < members.size(); m_indx++) {
+	    for(int a : allele_order_map) {
+	    //for(int a = 0; a < allele_order_map.size(); a++) {
+	      int ad_indx = m_indx*4 + a;//allele_order_map[a];
+	      //allele_depths[ad_indx] = gtcounts[allele_order_map[a]];
+	      //allele_depths.push_back(gtcounts[allele_order_map[a]]);
+	      allele_depths.push_back(gtcounts[ad_indx]);
+	    }
+	  }
+
+	  rec.samples("AD", allele_depths);
+	  out.WriteRecord(rec);
+	  
+	  /*
+	  std::cout << "site " << pos << ": ";
+	  std::cout << allele_order_str << "; ";
+	  std::cout << allele_depths[0];
+	  for(int a = 1; a < allele_depths.size(); a++) {
+	    std::cout << ", " << allele_depths[a];	    
+	  }
+	  std::cout << std::endl;
+	  */	  
+	}
+	
       }
 
       void publishSAMData(std::string &filename) {
@@ -717,6 +923,12 @@ namespace dng {
       double transitons_mut_ = 0.015;
       double transversion_mut_ = 0.005;
 
+      double somatic_mutation_rate_ = 0.01;
+      double homozygote_match_ = 0.98;
+      double heterozygote_match_ = 0.99;
+      
+      std::string chrom = "20";
+      size_t depth = 15;
     };
 
   
