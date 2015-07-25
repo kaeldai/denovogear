@@ -734,9 +734,6 @@ namespace dng {
 	*/
 
 	return ret;
-	//return {5, 4, 0, 1};
-	
-
       }
 
 
@@ -836,6 +833,24 @@ namespace dng {
 	
       }
 
+      std::string getMContig(Member *m) {
+	std::string contig;
+	// randomly choose a contig to sample
+	int chr = (rand() % 2) + 1;
+	
+	for(int pos = 0; pos < reference.size(); pos++) {
+	  char ref = reference[pos];
+	  char allele = m->getNuc(chr, pos);
+	  if(allele == ' ') 
+	    allele = ref;
+
+	  // need to add random mutation
+	  
+	  contig += allele;  
+	}
+	return contig;
+      }
+
       void publishSAMData(std::string &filename) {
 	//std::cout << "----HERE-----" << std::endl;
 	std::stringstream hdr_txt;
@@ -858,7 +873,37 @@ namespace dng {
 	bam_hdr_t *hdr = bam_hdr_init();
 	hdr->text = (char *)malloc(sizeof(char)*(header_str.size()+1));
 	strcpy(hdr->text, header_str.c_str());
+
+	std::stringstream sam_file;
+	for(int mindx = 0; mindx < members.size(); mindx++) {
+	  for(int i = 0; i < depth; i++) {
+	    Member *mem = members[mindx];
+	    sam_file << chrom << "\t";
+	    sam_file << 0 << "\t";
+	    sam_file << 1 << "\t";
+	    sam_file << 0 << "\t";
+	    sam_file << 0 << "\t";
+	    sam_file << reference.size() << "M" << "\t";
+	    sam_file << "=" << "\t";
+	    sam_file << 0 << "\t";
+	    sam_file << 0 << "\t";
+	    sam_file << getMContig(mem) << "\t";
+	    sam_file << "*" << "\t";
+	    sam_file << "RG:Z:" << std::to_string(mem->mid);
+	    sam_file << std::endl;
+	    
+	    //std::cout << getMContig(mem) << std::endl;
+
+	    //bam1_t *rec = bam_init1();
+	    //rec->core.tid = 20;
+	    //rec->core.pos = 0;
+	    
+	  }
+	}
 	
+	std::cout << hdr_txt.str();
+	std::cout << sam_file.str();
+
 	//sam_hdr_parse(header_str.size(), header_str.c_str());
 	
 	samFile *fp = sam_open(filename.c_str(), "w");
