@@ -30,15 +30,15 @@ namespace dng {
     typedef size_t family_id;
     typedef dng::io::Pedigree::Gender Gender;
 
-    // Used to keep track of differences between member's DNA and the reference
-    typedef std::unordered_map<size_t, char> reference_map;
-
     typedef std::array<double, 16> genotype_dist;
 
     // Format of output data file. 'None' indicates only PED file is generated.
     enum DataFormat { VCF, BCF, SAM, BAM, CRAM, None };
 
-    enum Nucleotide : uint8_t { A = 0, C, G, T, N, REF, UNASSIGNED };
+    enum Base : uint8_t { A, C, G, T, N, REF, UNASSIGNED };
+
+    static char nt2char[] = {'A', 'C', 'G', 'T', 'N', 'R', 'U'};
+
 
     // The number of data files generated.
     // TODO: Currenlty only one large file implemented
@@ -49,8 +49,17 @@ namespace dng {
     };
 
 
+    typedef std::unordered_map<size_t, Base> reference_map;
 
-    // TODO: May want to make this a child of dng::io::Pedigree::Member?
+    struct SampleLibrary {
+      std::string name;
+      size_t depth;
+      reference_map dna[2];
+      
+      //SampleLibrary(std::string &name_, size_t depth_) : name(name_), depth 
+
+    };
+
     struct Member {
       member_id mid; // interal usage
       std::string name; // name that shows up in pedigree and data file
@@ -60,17 +69,10 @@ namespace dng {
       Member *dad;
       bool hasDNA; // Used when generating the pedigree contigs
 
-      // Used to keep track of differences between member's DNA and the reference. We need one for each chromatid.
-      // TODO: Need a structure that better handles recombination. 
-      //       An NxM matrix, where N = site location and M = Member, may be more compact and efficient.
-      typedef std::unordered_map<size_t, char> reference_map;
-      reference_map c1;
-      reference_map c2;
-      reference_map library;
-      //std::vector<reference_map> library_mutations;
-      //reference_map somatic1;
-      //reference_map somatic2;
-
+      // Used to keep track of differences between member's DNA and the reference. We need one for each chromatid and somatic vs gametic
+      reference_map gametes[2];
+      std::vector<SampleLibrary> libraries;
+      
       Member(member_id mid_, family_id fid_, Gender sex_) : mid(mid_), fid(fid_), sex(sex_) {
 	name = (boost::format("NA%04d") % mid).str();
 	mom = nullptr;
@@ -96,59 +98,69 @@ namespace dng {
 	  return mom->name;
       }
 
-      void updateDNA(int cc, size_t site, char newNuc) {
-	if(cc == 1)
-	  c1.insert({site, newNuc});
-	else
-	  c2.insert({site, newNuc});
+      /**
+       * Change the nucleotide at 'site' for chromosome pair number 'chrom_num' to 'base'.
+       */
+      void updateDNA(int chrom_num, size_t site, Base base) {
+	if(chrom_num >= 2)
+	  throw std::runtime_error("Attempting to set base from more than diploidy DNA.");
+	
+	gametes[chrom_num].insert({site, base});
       }
 
+      /**
+       * Makes copies of mom and dad's dna and saves into member. Selection of chromosome pair is random
+       */
       void inheritDNA(Member *mom, Member *dad) {
-	int cn = rand() % 2;
-	reference_map chrm1 = (cn == 0 ? mom->c1 : mom->c2);
-	cn = rand() % 2;
-	reference_map chrm2 = (cn == 0 ? dad->c1 : dad->c2);
-	cn = rand() % 2;
-	if(cn == 0) {
-	  c1 = reference_map(chrm1);
-	  c2 = reference_map(chrm2);
+	// randomly select one of each pararents contigs and copy to child
+	int mom_chrom_num = rand() % 2;
+	int dad_chrom_num = rand() % 2;
+	int placement = rand() % 2;
+
+	gametes[placement] = reference_map(mom->gametes[mom_chrom_num]);
+	gametes[(placement+1)%2] = reference_map(dad->gametes[dad_chrom_num]);
+      }
+
+      /** 
+       * Get the nucleotide base at specified site, from either chromatid 0 or 1.
+       */
+      Base getNuc(size_t chromatid, size_t site) {
+	if(chromatid >= 2)
+	  throw std::runtime_error("Attempting to get nuclitide from chromatid " + std::to_string(chromatid) + ". Members only defined diploidy DNA.");
+	
+	reference_map &chrom = gametes[chromatid];
+	reference_map::const_iterator nt = chrom.find(site);
+	if(nt == chrom.end()) {
+	  return REF;
 	}
-	else{
-	  c1 = reference_map(chrm2);
-	  c2 = reference_map(chrm1);
+	else {
+	  return nt->second;
 	}
       }
 
-      char getNuc(int cc, size_t site) {
-	std::unordered_map<size_t, char> *chrom;
-	if(cc == 1)
-	  chrom = &c1;
-	else
-	  chrom = &c2;
+      void addLibrary(std::string &name, size_t depth) {
+	// TODO: Check that library with same name doesn't already exists
 
-	std::unordered_map<size_t, char>::const_iterator nuc = chrom->find(site);
-	if(nuc == chrom->end())
-	  return ' ';
-	else
-	  return nuc->second;
-
-	//if(cc == 1)
-	  //c1.insert({site, newNuc});
-	  //else
-	  //c2.insert({site, newNuc});
-	//return 'N';
+	SampleLibrary lib;
+	lib.name = std::string(name);
+	lib.depth = depth;
+	libraries.push_back(lib);
       }
 
-      void addLibrary() {
-
+      Base getLibDNA(size_t l_indx, size_t chrom, size_t site) {
+	reference_map &rmap = libraries[l_indx].dna[chrom];
+	reference_map::const_iterator nt = rmap.find(site);
+	if(nt ==  rmap.end()) {
+	  return REF;
+	}
+	else {
+	  return nt->second;
+	}
       }
 
-      void somatic_mutation(int chrom, int site, char nuc) {
-	library[site*chrom] = nuc;
-	//char nuc = getNuc(chrom, site);
-
+      void updateSample(size_t l_indx, size_t chrom, size_t site, Base base) {
+	libraries[l_indx].dna[chrom].insert({site, base});
       }
-
     };
 
  
@@ -229,6 +241,12 @@ namespace dng {
 	return child;           
       }
 
+      void AddLibrary(Member *m, std::string &libname, size_t depth) {
+
+
+      }
+
+
       template<typename Stream>
       void publishPed(Stream &output) {
 	
@@ -290,52 +308,6 @@ namespace dng {
 	weights[15] = (alpha[3] + alpha[3]*alpha[3]) / alpha_sum2; // TT
 	
 	return weights;
-
-	/*
-	std::cout << "  " << ref << " :";
-	for(int a = 0; a < 16; a++) {
-	  std::cout << weights[a] << "\t";
-	}
-	std::cout << std::endl;
-
-	double interval[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
-	std::piecewise_constant_distribution<> dist(std::begin(interval), std::end(interval), weights.begin());// std::begin(weights));
-	std::random_device rd;
-	std::mt19937 gen(rd());
-	std::cout << dist(gen) << std::endl;
-	*/
-
-	//std::cout << "  " << ref << " : " << weights << std::endl;
-
-
-	/*
-	for(int nuc1 = 0; nuc1 < 4; nuc1++) {
-	  for(int nuc2 = 0; nuc2 < 4; nuc2++) {
-	    double alp_ = alpha[nuc1]*alpha[nuc2];
-	    if(nuc1 == nuc2)
-	      
-	  }
-	}
-	*/
-
-	      /*
-	weights[0] = alpha[0]*(1.0 + alpha[0]) / alpha_sum2; // AA
-	weights[1]  2.0 * alpha[0]*(alpha[1]) / alpha_sum2, // AC
-	  2.0 * alpha[0]*(alpha[2]) / alpha_sum2, // AG
-	  2.0 * alpha[0]*(alpha[3]) / alpha_sum2, // AT
-	  alpha[1]*(1.0 + alpha[1]) / alpha_sum2, // CC
-	  2.0 * alpha[1]*(alpha[2]) / alpha_sum2, // CG
-	  2.0 * alpha[1]*(alpha[3]) / alpha_sum2, // CT
-	  alpha[2]*(1.0 + alpha[2]) / alpha_sum2, // GG
-	  2.0 * alpha[2]*(alpha[3]) / alpha_sum2, // GT
-	  alpha[3]*(1.0 + alpha[3]) / alpha_sum2; // TT
-	//return ret;
-	std::cout << "  " << ref << " : " << weights.transpose() << std::endl;
-
-	double interval[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
-	double weightsd[] = weights.transpose().data();
-	//std::piecewise_constant_distribution<> dist(std::begin(interval), std::end(interval), std::begin(weights));
-	*/
       }
 
       int Allele2Index(char c) {
@@ -366,15 +338,37 @@ namespace dng {
       }
 
       
+      std::array<std::pair<Base, Base>, 16> genotypes = {{{A, A}, {A, C}, {A, G}, {A, T},
+							  {C, A}, {C, C}, {C, G}, {C, T},
+							  {G, A}, {G, C}, {G, G}, {G, T},
+							  {T, A}, {T, C}, {T, G}, {T, T}}};
 
-      std::pair<char, char> index2Genotype(int index) {
+
+	/*
+      std::pair<Base, Base> index2Genotype(int index) {
+
 	std::vector<std::pair<char, char>> genotypes = {{'A','A'}, {'A','C'}, {'A','G'}, {'A','T'},
 							{'C','A'}, {'C','C'}, {'C','G'}, {'C','T'},
 							{'G','A'}, {'G','C'}, {'G','G'}, {'G','T'},
 							{'T','A'}, {'T','C'}, {'T','G'}, {'T','T'}};
 	return genotypes[index];
       }
+	*/
 
+      void createPriorsDist() {
+	genotype_dist ref_weights[] = { genotype_weights(theta_, nuc_freqs_, {ref_weight_, 0, 0, 0}),
+					genotype_weights(theta_, nuc_freqs_, {0, ref_weight_, 0, 0}),
+					genotype_weights(theta_, nuc_freqs_, {0, 0, ref_weight_, 0}),
+					genotype_weights(theta_, nuc_freqs_, {0, 0, 0, ref_weight_})};
+	double interval[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+
+	pop_priors_dists.emplace_back(std::begin(interval), std::end(interval), ref_weights[0].begin());
+	pop_priors_dists.emplace_back(std::begin(interval), std::end(interval), ref_weights[1].begin());
+	pop_priors_dists.emplace_back(std::begin(interval), std::end(interval), ref_weights[2].begin());
+	pop_priors_dists.emplace_back(std::begin(interval), std::end(interval), ref_weights[3].begin());
+      }
+
+      /*
       void createFounderGenotypes() {
 	genotype_dist ref_weights[] = { genotype_weights(theta_, nuc_freqs_, {ref_weight_, 0, 0, 0}),
 					genotype_weights(theta_, nuc_freqs_, {0, ref_weight_, 0, 0}),
@@ -388,19 +382,12 @@ namespace dng {
 	dists.emplace_back(std::begin(interval), std::end(interval), ref_weights[2].begin());
 	dists.emplace_back(std::begin(interval), std::end(interval), ref_weights[3].begin());
 
-	/*
-	std::piecewise_constant_distribution<> distA(std::begin(interval), std::end(interval), ref_weights[0].begin());
-	std::piecewise_constant_distribution<> distC(std::begin(interval), std::end(interval), ref_weights[1].begin());
-	std::piecewise_constant_distribution<> distG(std::begin(interval), std::end(interval), ref_weights[2].begin());
-	std::piecewise_constant_distribution<> distT(std::begin(interval), std::end(interval), ref_weights[3].begin());
-	*/
-
 	std::cout << "           ";
 	for(int a = 0; a*10 < reference.size(); a++) {
 	  std::cout << a << "        ";
 	}
 	std::cout << std::endl;
-	std::cout << "reference: " << reference << std::endl;
+	//std::cout << "reference: " << reference << std::endl;
 	std::random_device rd;
 	std::mt19937 gen(rd());
 	for(int a = 0; a < members.size(); a++) {
@@ -409,7 +396,7 @@ namespace dng {
 	    for(int b = 0; b < reference.size(); b++) {
 	      char ref = reference[b];
 	      int ref_idx = Allele2Index(ref);
-	      std::pair<char, char> genotype = index2Genotype(floor(dists[ref_idx](gen)));
+	      std::pair<Base, Base> genotype = genotypes[floor(dists[ref_idx](gen))];//index2Genotype(floor(dists[ref_idx](gen)));
 	      if(genotype.first != ref) {
 		m->updateDNA(1, b, genotype.first);
 	      }
@@ -425,41 +412,35 @@ namespace dng {
 	  {
 	    std::cout << m->name << "   : ";
 	    for(size_t a = 0; a < reference.size(); a++) {
-	      std::cout << m->getNuc(1, a);
+	      std::cout << m->getNuc(0, a);
 	    }
 	    std::cout << std::endl;
 	    
 	    std::cout << "           ";
 	    for(size_t a = 0; a < reference.size(); a++) {
-	      std::cout << m->getNuc(2, a);
+	      std::cout << m->getNuc(1, a);
 	    }
 	    std::cout << std::endl;
 	  }
 
 	}
-
-	/*
-	genotype_dist weights_refA = genotype_weights(theta_, nuc_freqs_, {ref_weight_, 0, 0, 0});
-	genotype_dist weights_refC = genotype_weights(theta_, nuc_freqs_, {0, ref_weight_, 0, 0});
-	genotype_dist weights_refG = genotype_weights(theta_, nuc_freqs_, {0, 0, ref_weight_, 0});
-	genotype_dist weights_refT = genotype_weights(theta_, nuc_freqs_, {0, 0, 0, ref_weight_});
-	double interval[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
-	std::piecewise_constant_distribution<> dist(std::begin(interval), std::end(interval), weights.begin());// std::begin(weights));
-	std::random_device rd;
-	std::mt19937 gen(rd());
-	*/
       }
+      */
 
-      inline char transition(char nuc){ 
-	char ret;
+      Base transitions[4] = {G, A, T, C};
+      Base transversions[4][2] = {{C, T}, {C, T}, {A, G}, {A, G}};
+      
+      /*
+      inline Base transition(Base nuc){ 
+	Base mutation;
 	switch(nuc) {
-	case 'A': ret = 'G'; break;
-	case 'G': ret = 'A'; break;
-	case 'C': ret = 'T'; break;
-	case 'T': ret = 'C'; break;
-	default: ret = 'N';
+	case A: mutation = G; break;
+	case G: mutation = A; break;
+	case C: mutation = T; break;
+	case T: mutation = C; break;
+	default:mutation = N;
 	}
-	return ret;
+	return mutation;
       }
       
       inline char transversion(char nuc){
@@ -470,12 +451,13 @@ namespace dng {
 	}
 	else {
 	  return options[1][r];
-	}
+	  }
       }
-    
+      */
 
+      /*
       void createChildrenDNA() {
-
+	
 	double interval[] = {0, 1, 2, 3};
 	double probs[] =  {transitons_mut_, transversion_mut_, (1.0 - transitons_mut_ - transversion_mut_)};
 	std::piecewise_constant_distribution<> dist(std::begin(interval), std::end(interval), std::begin(probs));
@@ -494,15 +476,13 @@ namespace dng {
 	    else {
 	      m->inheritDNA(m->mom, m->dad);
 	      for(int b = 0; b < reference.size(); b++) {
-		//char ref = reference[b];
-		//int ref_idx = Allele2Index(ref);
-		//std::pair<char, char> genotype = index2Genotype(floor(dists[ref_idx](gen)));
 		int mut_type = floor(dist(gen));
-		//std::cout << mut_type << std::endl;
-		if(mut_type == 2)
+
+		if(mut_type == 2) {
 		  continue;
+		}
 		else if(mut_type == 0) {
-		  char oldbase = m->getNuc(1, b);
+		  Base oldbase = m->getNuc(1, b);
 		  if(oldbase == ' ')
 		    oldbase = reference[b];
 		  char newbase = transition(oldbase);
@@ -519,63 +499,55 @@ namespace dng {
 		}
 
 	      }
-	      std::cout << m->name << "   : ";
-	      for(size_t a = 0; a < reference.size(); a++) {
-		std::cout << m->getNuc(1, a);
-	      }
-	      std::cout << std::endl;
-	      
-	      std::cout << "           ";
-	      for(size_t a = 0; a < reference.size(); a++) {
-		std::cout << m->getNuc(2, a);
-	      }
-	      std::cout << std::endl;
 	      
 	    }
 	  }
 	} while(remaining_members > 0);
-
       }
+      */
+
+      char mutation_options[4][3] = {{C, G, T}, {A, G, T}, {A, C, T}, {A, C, G}};
 
       void createLibraryMutations() {
-	std::uniform_real_distribution<double> unif(0, 1.0);
-	std::random_device rd;
-
-
 	double interval[] = {0, 1, 2, 3};
-	//double probs[] =  {transitons_mut_, transversion_mut_, (1.0 - transitons_mut_ - transversion_mut_)};
-	double probs[] = {0.33333, 0.33333, 1.0-0.66666};
+	double probs[] =  {transitons_mut_, transversion_mut_, (1.0 - transitons_mut_ - transversion_mut_)};
 	std::piecewise_constant_distribution<> dist(std::begin(interval), std::end(interval), std::begin(probs));
-	std::random_device rd1;
-	std::mt19937 gen(rd1());
+	std::random_device rd;
+	std::mt19937 gen(rd());
 
-	char options[4][3] = {{'C','G','T'}, {'A', 'G', 'T'}, {'A', 'C', 'T'}, {'A', 'C', 'G'}};
-	
-	for(int a = 0; a < members.size(); a++) {
-	  for(int chromosome : {1, 2}) {
-	    for(int b = 0; b < reference.size(); b++) {
-	      Member *m = members[a];
-	      double prob = unif(rd);
-	      if(prob <= somatic_mutation_rate_) {
-		char nuc = m->getNuc(chromosome, b);
-		if(nuc == ' ') {
-		  nuc = reference[b];
+	for(Member *m : members) {
+	  // If user hasn't specified any libraries create a default one
+	  if(m->libraries.size() == 0) {
+	    std::string libname = std::string(m->name) + "-" + m->family_name();
+	    m->addLibrary(libname, 10);
+	  }
+
+	  for(size_t l_indx = 0; l_indx < m->libraries.size(); l_indx++) {
+	    for(size_t site = 0; site < reference.size(); site++) {
+	      for(size_t chrom : {0, 1}) {
+		int mut_type = floor(dist(gen));
+		if(mut_type == 2) {
+		  // No Mutation
+		  continue;
 		}
-		int nuc_indx = 0;
-		if(nuc == 'C')
-		  nuc_indx = 1;
-		else if(nuc == 'G')
-		  nuc_indx = 2;
-		else if(nuc == 'T')
-		  nuc_indx = 3;
-
-		//std::piecewise_constant_distribution<> dist(std::begin(options[nuc_indx]), std::end(options[nuc_indx]), std::begin(probs));
-		int opt = floor(dist(gen));
-		char newnuc = options[nuc_indx][opt];
-		m->somatic_mutation(chromosome, b, newnuc);
-
-		//std::cout << nuc << " --> " << newnuc << std::endl;
-	      } 
+		else if(mut_type == 0) {
+		  // Transition mutation
+		  Base oldbase = m->getLibDNA(l_indx, chrom, site);
+		  if(oldbase == REF)
+		    oldbase = reference[site];
+		  m->updateSample(l_indx, chrom, site, transitions[oldbase]);
+		}
+		else {
+		  // Transversion
+		  Base oldbase = m->getLibDNA(l_indx, chrom, site);
+		  if(oldbase == REF)
+		    oldbase = reference[site];
+		  
+		  int r = rand() % 2; // 2 possible choices for each transverison
+		  m->updateSample(l_indx, chrom, site, transversions[oldbase][r]);
+		  
+		}
+	      }
 	    }
 	  }
 	}
@@ -583,120 +555,172 @@ namespace dng {
 
 
       void publishData() {
+	//////////////////////////
+	std::cout << "ref:   ";
+	for(Base b : reference) {
+	  std::cout << nt2char[b];
+	}
+	std::cout << std::endl;
+      	//////////////////////////
 
-	createFounderGenotypes();
-	createChildrenDNA();
+	createPriorsDist();
+	initGameteDNA();
+	
+	//////////////////////////
+	for(Member *m : members) {
+	  std::cout << m->name << " ";
+	    for(size_t chrom : {0, 1}) {
+	      for(int site = 0; site < reference.size(); site++) {
+		Base base = m->getNuc(chrom, site);
+		Base ref = reference[site];
+		if(base == REF)
+		  std::cout << ' ';
+		else   
+		  std::cout << nt2char[base];
+	      }
+	      std::cout << std::endl;
+	      std::cout << "       ";
+	    }
+	  std::cout << std::endl;
+	}
+	//////////////////////////
+
+	
+	
 	createLibraryMutations();
 	//publishVCFData();
-	
-	
 
-	
-	/*
-	std::cout.precision(5);
-	std::cout << std::fixed;
-	std::cout << "Ref :\tAA\tAC\tAG\tAT\tCA\tCC\tCG\tCT\tGA\tGC\tGG\tGT\tTA\tTC\tTG\tTT" << std::endl;
-	*/
-	/*
-	genotype_probs('A', theta_, nuc_freqs_, {ref_weight_, 0, 0, 0});
-	genotype_probs('C', theta_, nuc_freqs_, {0, ref_weight_, 0, 0});
-	genotype_probs('G', theta_, nuc_freqs_, {0, 0, ref_weight_, 0});
-	genotype_probs('T', theta_, nuc_freqs_, {0, 0, 0, ref_weight_});
-	genotype_probs('N', theta_, nuc_freqs_, {0, 0, 0, 0});
-	*/
+      }
 
-	/*
-	std::cout << std::endl << std::endl;
+      void createFounderDNA(Member *mem) {
+	// Go through each site in the reference contig and randomly select a genotype based on the reference. 
+	for(size_t site = 0; site < reference.size(); site++) {
+	  Base ref = reference[site];
+	  std::pair<Base, Base> gt = genotypes[floor(pop_priors_dists[ref](ran_generator))];
 
-
-
-	for(int a = 0; a < members.size(); a++) {
-	  Member *m = members[a];
-	  if(m->mom == NULL && m->dad == NULL) {
-	    //std::cout << m->name << " is a founder" << std::endl;
-	    double exp_muts = reference.size()*pop_prior_mutation;
-	    //std::cout << "Expected number of mutations: " << exp_muts << std::endl;
-	    // randomly sample the reference for sites of mutations, can change prob. of mutation and type depending on model
-	    for(int b = 0; b < exp_muts; b++) {
-	      for(int chromatid : {1, 2}) {
-		size_t site = rand() % reference.size();
-		//int newallele = rand() % 4;
-		char oldNuc = reference[site];
-		char newNuc = oldNuc;
-		switch(rand() % 4) {
-		case 0: newNuc = 'A'; break;
-		case 1: newNuc = 'C'; break;
-		case 2: newNuc = 'G'; break;
-		case 3: newNuc = 'T'; break;
-		}
-		if(oldNuc != newNuc) {
-		  //std::cout << "\t" << "[" << site << "] " << oldNuc << " --> " << newNuc << std::endl;
-		  //chromotid.insert({site, newNuc});
-		  m->updateDNA(chromatid, site, newNuc);
-		}
-	      }	
-	    }
-	    m->hasDNA = true;
-	    
-
-	    std::cout << m->name << "   : ";
-	    for(size_t a = 0; a < reference.size(); a++) {
-	      std::cout << m->getNuc(1, a);
-	    }
-	    std::cout << std::endl;
-	    
-	    std::cout << "           ";
-	    for(size_t a = 0; a < reference.size(); a++) {
-	      std::cout << m->getNuc(2, a);
-	    }
-	    std::cout << std::endl;
+	  // Only need to keep track if site is different from the reference.
+	  if(gt.first != ref) {
+	    mem->updateDNA(0, site, gt.first);
 	  }
-	}
+	  if(gt.second != ref) {
+	    mem->updateDNA(1, site, gt.second);
+	  }
+	}	    
+      }
 
-	int remaining_members = 0;
-	do {
-	  for(int a = 0; a < members.size(); a++) {
-	    Member *m = members[a];
-	    if(m->hasDNA == true)
+      void createChildDNA(Member *child, Member *parent) {
+	// Temporarly create a parent
+	Member *tmp_parent = new Member(-1, -1, Gender::Unknown);
+	createFounderDNA(tmp_parent);
+
+	// update child
+	createChildDNA(child, tmp_parent, parent);
+
+	// delete parent
+	delete tmp_parent;
+      }
+
+      void createChildDNA(Member *child, Member *mom, Member *dad) {
+	if(child == NULL || mom == NULL || dad == NULL)
+	  // TODO: throw error
+	  return;
+
+	// Weighted probs of type of mutation; transtion, transversion, or none.
+	double interval[] = {0, 1, 2, 3};
+	double probs[] =  {transitons_mut_, transversion_mut_, (1.0 - transitons_mut_ - transversion_mut_)};
+	std::piecewise_constant_distribution<> dist(std::begin(interval), std::end(interval), std::begin(probs));
+	std::random_device rd;
+	std::mt19937 gen(rd());
+
+	child->inheritDNA(mom, dad);
+	// Go through the DNA and 
+	// TODO: Figure out a way to sample a few sites rather than iterate through the entire contig
+	for(int site = 0; site < reference.size(); site++) {
+	  for(size_t chrom : {0, 1}) {
+	    int mut_type = floor(dist(gen));
+	    if(mut_type == 2) {
+	      // No Mutation
 	      continue;
-	    else if(!m->dad->hasDNA || !m->mom->hasDNA) {
-	      remaining_members++;
-	      continue;
+	    }
+	    else if(mut_type == 0) {
+	      // Transition mutation
+	      Base oldbase = child->getNuc(chrom, site);
+	      if(oldbase == REF)
+		oldbase = reference[site];
+	      child->updateDNA(chrom, site, transitions[oldbase]);
 	    }
 	    else {
+	      // Transversion
+	      Base oldbase = child->getNuc(chrom, site);
+	      if(oldbase == REF)
+		oldbase = reference[site];
+
+	      int r = rand() % 2; // 2 possible choices for each transverison
+	      child->updateDNA(chrom, site, transversions[oldbase][r]);
 	      
 	    }
 	  }
-	} while(remaining_members > 0);
-	*/
-	
+	}
+      }
 
-
-	// Get Reference
-	// for each root (founders) parents, 
-	//    for each site in reference
-	//       randomly mutate (SNP's, MNP, and In-Dels) sites and create heterozygousity
-	// for each trio belonging to one of the founders
-	//     randomly assign a parent's chromosome to the child
-	//     randomly create a gametic mutation
-	//     Keep track of differences between reference and child mutation
-	// Repeat above using the new children.
-	// Each Member should have a list of sites of mutations/heterozygousity that differ from the reference
-	//
-	// for each member
-	//   
-	
+      /**
+       * Iterate through all the members of the pedigree creating DNA based on the reference and parential DNA.
+       */
+      void initGameteDNA() {
+	// loop through all the members, since we don't assume anything about the order of the pedigree list we have to 
+	// make mulitple loops through; first initializing the pedigree founders, then the founders' children, and then
+	// their children, etc.
+	size_t remaining = members.size();
+	while(remaining > 0) {
+	  for(Member *m : members) {
+	    if(m->hasDNA) {
+	      // Member already has gametic DNA, skip
+	      continue;
+	    }
+	    else if(m->mom == NULL && m->dad == NULL) {
+	      // Member is a pedigree founder - does not have parents
+	      createFounderDNA(m);
+	      m->hasDNA = true;
+	      remaining--;
+	    }
+	    else if(!(m->mom == NULL) != !(m->dad == NULL)) {
+	      // Special case where member has only one parent in pedigree and another is missing. Need to wait to parent has
+	      // DNA filled.
+	      if(m->mom != NULL && m->mom->hasDNA) {
+		createChildDNA(m, m->mom);
+		m->hasDNA = true;
+		remaining--;
+	      }
+	      else if(m->dad != NULL && m->dad->hasDNA) {
+		createChildDNA(m, m->dad);
+		m->hasDNA = true;
+		remaining--;
+	      }
+	      else {
+		continue;
+	      }
+	    } 
+	    else {
+	      // A child with both parents in pedigree. Wait until parents have their DNA before initializing.
+	      if(m->mom->hasDNA && m->dad->hasDNA) {
+		createChildDNA(m, m->mom, m->dad);
+		m->hasDNA = true;
+		remaining--;
+	      }
+	    }	    
+	  }
+	}
       }
 
 
 
       std::array<size_t, 4> depth_count(Member *m, size_t pos) {
 	char ref = reference[pos];
-	char allele1 = m->getNuc(1, pos);
+	char allele1 = m->getNuc(0, pos);
 	if(allele1 == ' ')
 	  allele1 = ref;
 
-	char allele2 = m->getNuc(2, pos);
+	char allele2 = m->getNuc(1, pos);
 	if(allele2 == ' ')
 	  allele2 = ref;
 
@@ -809,44 +833,30 @@ namespace dng {
 	  std::vector<int32_t> allele_depths;
 	  for(int m_indx = 0; m_indx < members.size(); m_indx++) {
 	    for(int a : allele_order_map) {
-	    //for(int a = 0; a < allele_order_map.size(); a++) {
 	      int ad_indx = m_indx*4 + a;//allele_order_map[a];
-	      //allele_depths[ad_indx] = gtcounts[allele_order_map[a]];
-	      //allele_depths.push_back(gtcounts[allele_order_map[a]]);
 	      allele_depths.push_back(gtcounts[ad_indx]);
 	    }
 	  }
 
 	  rec.samples("AD", allele_depths);
 	  out.WriteRecord(rec);
-	  
-	  /*
-	  std::cout << "site " << pos << ": ";
-	  std::cout << allele_order_str << "; ";
-	  std::cout << allele_depths[0];
-	  for(int a = 1; a < allele_depths.size(); a++) {
-	    std::cout << ", " << allele_depths[a];	    
-	  }
-	  std::cout << std::endl;
-	  */	  
 	}
-	
       }
 
-      std::string getMContig(Member *m) {
+      std::string getContig(Member *m) {
 	std::string contig;
 	// randomly choose a contig to sample
-	int chr = (rand() % 2) + 1;
+	int chr = (rand() % 2);
 	
 	for(int pos = 0; pos < reference.size(); pos++) {
-	  char ref = reference[pos];
-	  char allele = m->getNuc(chr, pos);
-	  if(allele == ' ') 
+	  Base ref = reference[pos];
+	  Base allele = m->getNuc(chr, pos);
+	  if(allele == REF) 
 	    allele = ref;
 
 	  // need to add random mutation
 	  
-	  contig += allele;  
+	  contig += nt2char[allele];  
 	}
 	return contig;
       }
@@ -859,14 +869,18 @@ namespace dng {
 	hdr_txt << "@SQ\tSN:1\tLN:249250621" << std::endl;
 	for(int a = 0; a < members.size(); a++) {
 	  Member *mem = members[a];
-	  std::string id = std::to_string(mem->mid);
-	  //char name[8];
-	  //sprintf(name, "NA%05d", id);
-	  hdr_txt << "@RG\t"
-		  << "ID:" << id << "\t"
-		  << "LB:" << mem->name + "-" + mem->family_name() << "\t" //(std::string(name)+"-"+ring(id)) << "\t"
-		  << "SM:" << mem->name << std::endl;
-	  
+	  if(mem->libraries.size() == 0) {
+	    std::string id = std::to_string(mem->mid);
+	    //char name[8];
+	    //sprintf(name, "NA%05d", id);
+	    hdr_txt << "@RG\t"
+		    << "ID:" << id << "\t"
+		    << "LB:" << mem->name + "-" + mem->family_name() << "\t" //(std::string(name)+"-"+ring(id)) << "\t"
+		    << "SM:" << mem->name << std::endl;
+	  }
+	  else {
+
+	  }
 	}
 	std::string header_str = hdr_txt.str();
 
@@ -887,7 +901,7 @@ namespace dng {
 	    sam_file << "=" << "\t";
 	    sam_file << 0 << "\t";
 	    sam_file << 0 << "\t";
-	    sam_file << getMContig(mem) << "\t";
+	    sam_file << getContig(mem) << "\t";
 	    sam_file << "*" << "\t";
 	    sam_file << "RG:Z:" << std::to_string(mem->mid);
 	    sam_file << std::endl;
@@ -919,14 +933,78 @@ namespace dng {
 
     private:
       Factory(DataFormat df) : dataformat_(df){ 
-	reference = "TTAATAGGGCGTTGCTGGCGGGCGTTGGGTGTGGCCCGCAGTCCTGGTTGAGGATTGCCC";
+	std::string reference_str = "TTAATAGGGCGTTGCTGGCGGGCGTTGGGTGTGGCCCGCAGTCCTGGTTGAGGATTGCCC";
+	setReference(reference_str);
       };
+
       int get_uid() { return id_list++; };
+
       family_id get_famid() { 
 	family_id id = fam_list++;
 	fam_rels[id] = std::vector<Member*>();
 	return id;
       };
+
+      
+      static Base char2base(char c) {
+	Base ret;
+	switch(c) {
+	case 'A':
+	case 'a': ret = A; break;
+	case 'C':
+	case 'c': ret = C; break;
+	case 'G':
+	case 'g': ret = G; break;
+	case 'T':
+	case 't': ret = T; break;
+	case 'N':
+	case 'n': ret = N; break;
+	default: ret = UNASSIGNED;
+	}
+	return ret;
+      }
+      
+
+      void setReference(std::string &fasta, std::string &range) {
+
+      }
+
+      /*
+      static const Base char2base[256] = {
+	N, N, N, N,  N, N, N, N,  N, N, N, N,  N, N, N, N,
+	N, N, N, N,  N, N, N, N,  N, N, N, N,  N, N, N, N,
+	N, N, N, N,  N, N, N, N,  N, N, N, N,  N, N, N, N,
+	N, N, N, N,  N, N, N, N,  N, N, N, N,  N, N, N, N,
+
+	N, A, N, C,  N, N, N, G,  N, N, N, N,  N, N, N, N,
+	N, N, N, N,  T, N, N, N,  N, N, N, N,  N, N, N, N,
+	N, A, N, C,  N, N, N, G,  N, N, N, N,  N, N, N, N,
+	N, N, N, N,  T, N, N, N,  N, N, N, N,  N, N, N, N,
+	
+	N, N, N, N,  N, N, N, N,  N, N, N, N,  N, N, N, N,
+	N, N, N, N,  N, N, N, N,  N, N, N, N,  N, N, N, N,
+	N, N, N, N,  N, N, N, N,  N, N, N, N,  N, N, N, N,
+	N, N, N, N,  N, N, N, N,  N, N, N, N,  N, N, N, N,
+	
+	N, N, N, N,  N, N, N, N,  N, N, N, N,  N, N, N, N,
+	N, N, N, N,  N, N, N, N,  N, N, N, N,  N, N, N, N,
+	N, N, N, N,  N, N, N, N,  N, N, N, N,  N, N, N, N,
+	N, N, N, N,  N, N, N, N,  N, N, N, N,  N, N, N, N,
+      };
+      */
+
+
+      void setReference(std::string &ref) {
+	if(ref.size() == 0) 
+	  return;
+	
+	reference.resize(0);
+	for(char nt : ref) {
+	  reference.push_back(char2base(nt));
+	}
+      }
+
+
 
       void merge_families(family_id source, family_id dest) {
 	if(fam_rels.find(source) == fam_rels.end() || fam_rels.find(dest) == fam_rels.end())
@@ -943,6 +1021,7 @@ namespace dng {
       }
       
       
+
       size_t get_gender(Gender sex) {
 	size_t ret;
 	switch(sex){
@@ -960,7 +1039,9 @@ namespace dng {
 
       DataFormat dataformat_;
       // TODO: Either keep reference in file stream, or compact into 2 bits.
-      std::string reference;
+      //std::string reference;
+      std::vector<Base> reference;
+
       double pop_prior_mutation = .1;
       double theta_ = 0.1;
       std::array<double, 4> nuc_freqs_ = {0.3, 0.2, 0.2, 0.3};
@@ -971,6 +1052,8 @@ namespace dng {
       double somatic_mutation_rate_ = 0.01;
       double homozygote_match_ = 0.98;
       double heterozygote_match_ = 0.99;
+      std::vector<std::piecewise_constant_distribution<>> pop_priors_dists;
+      std::mt19937 ran_generator;
       
       std::string chrom = "20";
       size_t depth = 15;
