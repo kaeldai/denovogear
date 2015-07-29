@@ -3,6 +3,7 @@
 
 #include "htslib/sam.h"
 #include "dng/hts/bcf.h"
+#include "dng/hts/bam.h"
 #include <vector>
 #include <unordered_map>
 #include <set>
@@ -21,6 +22,138 @@
 #define IS_EMPTY(mem) (mem == nullptr)
 
 #define PED_NOPARENT "0"
+
+/*
+  const auto data_array_bytes = m_name.num_bytes() + m_cigar.num_bytes() + m_bases.num_bytes() + m_base_quals.num_bytes() + m_tags.num_bytes();
+  // use malloc() instead of new so that htslib can free this memory
+  auto data_array = (uint8_t*)malloc(data_array_bytes);
+  auto data_array_ptr = data_array;
+
+  data_array_ptr = m_name.copy_into(data_array_ptr);
+  data_array_ptr = m_cigar.copy_into(data_array_ptr);
+  data_array_ptr = m_bases.copy_into(data_array_ptr);
+  data_array_ptr = m_base_quals.copy_into(data_array_ptr);
+  data_array_ptr = m_tags.copy_into(data_array_ptr);
+
+  sam->data = data_array;
+  sam->l_data = data_array_bytes;
+  sam->m_data = data_array_bytes;
+  sam->core.l_qname = m_name.num_bytes();
+  sam->core.l_qseq = m_bases.num_elements();
+  sam->core.n_cigar = m_cigar.num_elements();
+*/
+
+class BAMRec : public bam1_t
+{
+public:
+
+	  void set_qname(std::string &qname) {
+		  std::copy(qname.begin(), qname.end(), std::back_inserter(bam_qname));
+		  /*
+		  l_qname_ = qname.size();
+		  qname_ = new uint8_t[l_qname_];
+		  std::copy(qname.begin(), qname.end(), qname_);
+		  */
+	  }
+
+	  void add_cigar(char op, unsigned int len){
+		  bam_cigars.push_back(bam_cigar_gen(bam_cigar_op(op), len));
+	  }
+
+	  void set_seq(std::string &seq) {
+		  int seq_size = seq.size();
+		  int i = 0;
+		  for( ; (i+1) < seq_size; i += 2) {
+			  int8_t shared_base = (hts_seq[i] << 4) | hts_seq[i+1];
+			  bam_seq.push_back(shared_base);
+		  }
+		  if(i != seq_size) {
+			  int8_t shared_base = hts_seq[i] << 4;
+			  bam_seq.push_back(shared_base);
+		  }
+	  }
+
+
+	  void set_qual(std::string &qual) {
+		  std::copy(qual.begin(), qual.end(), std::back_inserter(bam_qual));
+	  }
+
+	  void add_aux(std::string &aux) {
+
+	  }
+
+public:
+	  std::vector<uint8_t> bam_qname;
+	  std::vector<uint32_t> bam_cigars;
+	  std::vector<uint8_t> bam_seq;
+	  std::vector<uint8_t> bam_qual;
+
+      uint8_t hts_seq[5] = {1, 2, 4, 8, 15};
+
+};
+
+class BAMFile
+{
+public:
+	BAMFile(const char *file, const char *mode) {
+		fp_ = sam_open(file, mode);
+	}
+
+	void set_header(const char *text, int l_text) {
+		hdr_ = bam_hdr_init();
+		hdr_->text = (char *)malloc(sizeof(char)*(l_text));
+		strcpy(hdr_->text, text);
+		sam_hdr_write(fp_, hdr_);
+		//hdr_ = sam_hdr_parse(l_text, text);
+	}
+
+	//void write_header() {
+		//sam_hdr_write(fp_, hdr_);
+
+		/*
+  	  bam_hdr_t *hdr = bam_hdr_init();
+  	  hdr->text = (char *)malloc(sizeof(char)*(hdr_txt.str().size()+1));
+  	  strcpy(hdr->text, hdr_txt.str().c_str());
+  	  */
+	//}
+
+	BAMRec init_rec() {
+		return BAMRec();
+	}
+
+	void write_record(BAMRec &rec) {
+
+		rec.core.l_qname = rec.bam_qname.size();
+		rec.core.l_qseq = rec.bam_seq.size()*2;
+		rec.core.n_cigar = rec.bam_cigars.size();
+		size_t data_size = rec.bam_qname.size() + rec.bam_cigars.size()*4 + rec.bam_seq.size() + rec.bam_qual.size();
+		uint8_t *data = (uint8_t *)malloc(data_size);
+		uint8_t *data_ptr = data;
+		for(uint8_t d : rec.bam_qname) {
+			*(data_ptr++) = d;
+		}
+
+		for(uint32_t d : rec.bam_cigars) {
+			*data_ptr = d;
+			data_ptr += 4;
+		}
+
+		for(uint8_t d : rec.bam_seq) {
+			*(data_ptr++) = d;
+		}
+
+		sam_write1(fp_, hdr_, &rec);
+
+	}
+
+	void save() {
+		sam_close(fp_);
+	}
+
+private:
+	bam_hdr_t *hdr_;
+    samFile *fp_;
+};
 
 
 namespace dng {
@@ -518,6 +651,7 @@ namespace dng {
 	for(Member *m : members) {
 	  // If user hasn't specified any libraries create a default one
 	  if(m->libraries.size() == 0) {
+	    //std::cout << "Adding Library" << std::endl;
 	    std::string libname = std::string(m->name) + "-" + m->family_name();
 	    m->addLibrary(libname, 10);
 	  }
@@ -762,7 +896,7 @@ namespace dng {
 
 
       void publishVCFData(std::string &file) {
-	hts::bcf::File out(file.c_str(), "w");
+	hts::bcf::File out(file.c_str() , "w");
 	out.AddHeaderMetadata("##fileformat=VCFv4.2");
 	out.AddHeaderMetadata("##FORMAT=<ID=AD,Number=.,Type=Integer,Description=\"Allelic depths for the ref and alt alleles in the order listed\">");
 	out.AddContig("1", 243199373);
@@ -861,57 +995,109 @@ namespace dng {
 	return contig;
       }
 
-      void publishSAMData(std::string &filename) {
-	//std::cout << "----HERE-----" << std::endl;
-	std::stringstream hdr_txt;
-	//filename += ".sam";
-	hdr_txt << "@HD\tVN:0.1\tSO:unknown\tGO:none" << std::endl;
-	hdr_txt << "@SQ\tSN:1\tLN:249250621" << std::endl;
-	for(int a = 0; a < members.size(); a++) {
-	  Member *mem = members[a];
-	  if(mem->libraries.size() == 0) {
-	    std::string id = std::to_string(mem->mid);
-	    //char name[8];
-	    //sprintf(name, "NA%05d", id);
-	    hdr_txt << "@RG\t"
-		    << "ID:" << id << "\t"
-		    << "LB:" << mem->name + "-" + mem->family_name() << "\t" //(std::string(name)+"-"+ring(id)) << "\t"
-		    << "SM:" << mem->name << std::endl;
-	  }
-	  else {
 
-	  }
-	}
-	std::string header_str = hdr_txt.str();
 
-	bam_hdr_t *hdr = bam_hdr_init();
-	hdr->text = (char *)malloc(sizeof(char)*(header_str.size()+1));
-	strcpy(hdr->text, header_str.c_str());
 
+
+
+      void publishSAMData(std::string &file) {
+
+
+    	  // Build the bam header file from scratch
+    	  std::stringstream hdr_txt;
+    	  hdr_txt << "@HD\tVN:0.1\tSO:unknown\tGO:none" << std::endl;
+    	  hdr_txt << "@SQ\tSN:1\tLN:249250621" << std::endl;
+    	  int id = 0;
+    	  for(int a = 0; a < members.size(); a++) {
+    		  Member *mem = members[a];
+    		  for(int lib_idx = 0; lib_idx < mem->libraries.size(); lib_idx++) {
+    			  std::string id = std::to_string(mem->mid) + "-" + mem->libraries[lib_idx].name;
+    			  hdr_txt << "@RG" << "\t"
+    					  << "ID:" << id << "\t"
+    					  << "LB:" << mem->libraries[lib_idx].name << "\t"
+    					  << "SM:" << mem->name << std::endl;
+    		  }
+    	  }
+
+//    	  samFile *fp = sam_open(file.c_str(), "w");
+//    	  bam_hdr_t *hdr = bam_hdr_init();
+//    	  hdr->text = (char *)malloc(sizeof(char)*(hdr_txt.str().size()+1));
+//    	  strcpy(hdr->text, hdr_txt.str().c_str());
+//    	  //bam_hdr_t *hdr = sam_hdr_parse(hdr_txt.str().size(), hdr_txt.str().c_str());
+//    	  sam_hdr_write(fp, hdr);
+//    	  std::cout << "HERE" << std::endl;
+//    	  sam_close(fp);
+
+
+//    	  std::cout << hdr_txt.str() << std::endl;
+
+
+    	  BAMFile out(file.c_str(), "w");
+    	  out.set_header(hdr_txt.str().c_str(), hdr_txt.str().size());
+
+    	  for(Member *member : members) {
+    		  for(int l = 0; l < member->libraries.size(); l++) {
+
+    			  for(int d = 0; d < member->libraries[l].depth; d++) {
+    				  BAMRec rec = out.init_rec();
+    				  rec.set_qname(chrom);
+
+    				  //std::string cigar = std::to_string(reference.size()) + "M";
+    				  rec.add_cigar('M', reference.size());
+
+    				  std::string seq;
+    				  int cn = rand() % 2;
+    				  for(int pos = 0; pos < reference.size(); pos++) {
+    					  Base b = member->getLibDNA(l, cn, pos);
+    					  if(b == REF)
+    						  b = reference[pos];
+
+    					  seq += nt2char[b];
+    				  }
+    				  //rec.set_seq(seq, reference.size());
+
+    				  std::string aux = std::string("RG:Z:") + std::to_string(member->mid) + "-" + member->libraries[l].name;
+    				  //rec.add_aux(aux);
+
+    				  //out.write_record(rec);
+    			  }
+    		  }
+    	  }
+
+
+	//std::string header_str = hdr_txt.str();
+
+	//bam_hdr_t *hdr = bam_hdr_init();
+	//hdr->text = (char *)malloc(sizeof(char)*(header_str.size()+1));
+	//strcpy(hdr->text, header_str.c_str());
+
+    	  /*
 	std::stringstream sam_file;
 	for(int mindx = 0; mindx < members.size(); mindx++) {
-	  for(int i = 0; i < depth; i++) {
-	    Member *mem = members[mindx];
-	    sam_file << chrom << "\t";
-	    sam_file << 0 << "\t";
-	    sam_file << 1 << "\t";
-	    sam_file << 0 << "\t";
-	    sam_file << 0 << "\t";
-	    sam_file << reference.size() << "M" << "\t";
-	    sam_file << "=" << "\t";
-	    sam_file << 0 << "\t";
-	    sam_file << 0 << "\t";
-	    sam_file << getContig(mem) << "\t";
-	    sam_file << "*" << "\t";
-	    sam_file << "RG:Z:" << std::to_string(mem->mid);
-	    sam_file << std::endl;
-	    
-	    //std::cout << getMContig(mem) << std::endl;
+	  Member *mem = members[mindx];
+	  for(int lindx = 0; lindx < mem->libraries.size(); lindx++) {
+	    for(int i = 0; i < mem->libraries[lindx].depth; i++) {
 
-	    //bam1_t *rec = bam_init1();
-	    //rec->core.tid = 20;
-	    //rec->core.pos = 0;
-	    
+	      sam_file << chrom << "\t";
+	      sam_file << 0 << "\t";
+	      sam_file << 1 << "\t";
+	      sam_file << 0 << "\t";
+	      sam_file << 0 << "\t";
+	      sam_file << reference.size() << "M" << "\t";
+	      sam_file << "=" << "\t";
+	      sam_file << 0 << "\t";
+	      sam_file << 0 << "\t";
+	      sam_file << getContig(mem) << "\t";
+	      sam_file << "*" << "\t";
+	      sam_file << "RG:Z:" << std::to_string(mem->mid) + "-" + mem->libraries[lindx].name;
+	      sam_file << std::endl;
+	      
+	      //std::cout << getMContig(mem) << std::endl;
+	      
+	      //bam1_t *rec = bam_init1();
+	      //rec->core.tid = 20;
+	      //rec->core.pos = 0;
+	    }
 	  }
 	}
 	
@@ -920,13 +1106,15 @@ namespace dng {
 
 	//sam_hdr_parse(header_str.size(), header_str.c_str());
 	
-	samFile *fp = sam_open(filename.c_str(), "w");
+	samFile *fp = sam_open(file.c_str(), "w");
 	//std::cout << "> " << hdr->text << std::endl;
 	
 	//bam1_t *line = bam_init1(); 
 	//sam_write1(fp, hdr, line); 
-	sam_hdr_write(fp, hdr);
-	sam_close(fp);
+	//sam_hdr_write(fp, hdr);
+	//sam_close(fp);
+	 * *
+	 */
 	
       }
 
