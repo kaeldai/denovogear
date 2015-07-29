@@ -23,33 +23,9 @@
 
 #define PED_NOPARENT "0"
 
-/*
-  const auto data_array_bytes = m_name.num_bytes() + m_cigar.num_bytes() + m_bases.num_bytes() + m_base_quals.num_bytes() + m_tags.num_bytes();
-  // use malloc() instead of new so that htslib can free this memory
-  auto data_array = (uint8_t*)malloc(data_array_bytes);
-  auto data_array_ptr = data_array;
-
-  data_array_ptr = m_name.copy_into(data_array_ptr);
-  data_array_ptr = m_cigar.copy_into(data_array_ptr);
-  data_array_ptr = m_bases.copy_into(data_array_ptr);
-  data_array_ptr = m_base_quals.copy_into(data_array_ptr);
-  data_array_ptr = m_tags.copy_into(data_array_ptr);
-
-  sam->data = data_array;
-  sam->l_data = data_array_bytes;
-  sam->m_data = data_array_bytes;
-  sam->core.l_qname = m_name.num_bytes();
-  sam->core.l_qseq = m_bases.num_elements();
-  sam->core.n_cigar = m_cigar.num_elements();
-*/
-
 class BAMRec : public bam1_t
 {
 public:
-
-  //BAMRec() {
-  //  &this = bam_init1();
-  //}
 
 	  void set_qname(std::string &qname) {
 		  std::copy(qname.begin(), qname.end(), std::back_inserter(bam_qname));
@@ -61,49 +37,76 @@ public:
 		  */
 	  }
 
-	  void add_cigar(char op, unsigned int len){
-	    //std::cout << op << " = " << bam_cigar_op(op) << "(" << std::bitset<8>(bam_cigar_op(op)) << ")" << std::endl;
+	  void add_cigar(int op, unsigned int len){
+
+	    //std::cout << op << " = " << bam_cigar_type('I') << "(" << std::bitset<8>(bam_cigar_op(op)) << ")" << std::endl;
 	    //std::cout << len << " = " << std::bitset<32>(len) << std::endl;
-	    uint32_t cigar = bam_cigar_gen(len, bam_cigar_op(op));
-	    uint8_t byte1 = (cigar & 0xFF000000) >> 6;
-	    uint8_t byte2 = (cigar & 0xFF0000) >> 4;
-	    uint8_t byte3 = (cigar & 0xFF00) >> 2;
+	    uint32_t cigar = bam_cigar_gen(len, op);//bam_cigar_op(op));
+	    uint8_t byte1 = (cigar & 0xFF000000) >> 24;
+	    uint8_t byte2 = (cigar & 0xFF0000) >> 16;
+	    uint8_t byte3 = (cigar & 0xFF00) >> 8;
 	    uint8_t byte4 = (cigar & 0xFF);
+	    //std::cout << std::bitset<32>(cigar) << std::endl;
 	    /*
-	    std::cout << "["       << std::bitset<8>(byte1) << ", "
-	    << std::bitset<8>(byte2) << ", "
+	    std::cout << "["
+	    		  << std::bitset<8>(byte1) << ", "
+	    		  << std::bitset<8>(byte2) << ", "
 	    	      << std::bitset<8>(byte3) << ", "
 	    	      << std::bitset<8>(byte4) << "]" << std::endl;
-	    */
-	    //std::cout << std::bitset<32>(cigar) << std::endl;
+
+	     */
 	    //bam_cigars.push_back(bam_cigar_gen(bam_cigar_op(op), len));
-	    bam_cigars.push_back(byte1);
-	    bam_cigars.push_back(byte2);
-	    bam_cigars.push_back(byte3);
 	    bam_cigars.push_back(byte4);
+	    bam_cigars.push_back(byte3);
+	    bam_cigars.push_back(byte2);
+	    bam_cigars.push_back(byte1);
 	    
 	  }
 
 	  void set_seq(std::string &seq) {
+		  //std::cout << "-- " << seq << std::endl;
 		  int seq_size = seq.size();
 		  int i = 0;
 		  for( ; (i+1) < seq_size; i += 2) {
-			  int8_t shared_base = (hts_seq[i] << 4) | hts_seq[i+1];
+			  uint8_t shared_base = (seq_nt16_table[seq[i]] << 4) | seq_nt16_table[seq[i+1]];
+
 			  bam_seq.push_back(shared_base);
 		  }
 		  if(i != seq_size) {
 			  int8_t shared_base = hts_seq[i] << 4;
 			  bam_seq.push_back(shared_base);
 		  }
+		  //std::cout << "seq size = " << bam_seq.size() << std::endl;
+		  //std::cout << std::bitset<8>(bam_seq[0]) << std::endl;
 	  }
 
 
 	  void set_qual(std::string &qual) {
-		  std::copy(qual.begin(), qual.end(), std::back_inserter(bam_qual));
+		  for(int i = 0; i < (bam_seq.size()*2); i++) {
+			  bam_qual.push_back(0);
+		  }
+
+		  //std::copy(qual.begin(), qual.end(), std::back_inserter(bam_qual));
 	  }
 
-	  void add_aux(std::string &aux) {
+	  void add_aux(const char tag[2], char type, std::string &data) {
+		  size_t l_aux = 3 + data.size();
+		  bam_aux.push_back(tag[0]);
+		  bam_aux.push_back(tag[1]);
+		  bam_aux.push_back(type);
+		  for(char c : data) {
+			  bam_aux.push_back(c);
+		  }
+		  bam_aux.push_back('\0');
 
+	  //void add_aux(std::string &aux) {
+		  //std::cout << aux << std::endl;
+		  //for(char c : aux) {
+		  //	  bam_aux.push_back((int8_t)c);
+		  //}
+	  //void add_aux(const char tag[2], std::string &field) {
+
+		  //bam_aux_append(this, {'S', 'M'}, 'Z', 5, "NA00");
 	  }
 
 public:
@@ -111,6 +114,8 @@ public:
 	  std::vector<uint8_t> bam_cigars;
 	  std::vector<uint8_t> bam_seq;
 	  std::vector<uint8_t> bam_qual;
+	  std::vector<uint8_t> bam_aux;
+	  //std::vector<std::pair<char tag[2], std::string>>
 
       uint8_t hts_seq[5] = {1, 2, 4, 8, 15};
 
@@ -150,84 +155,59 @@ public:
 		rec.core.l_qname = rec.bam_qname.size();
 		rec.core.l_qseq = rec.bam_seq.size()*2;
 		rec.core.n_cigar = rec.bam_cigars.size()/4;
-		size_t data_size = rec.bam_qname.size() + rec.bam_cigars.size() + rec.bam_seq.size() + rec.bam_qual.size();
+		size_t data_size = rec.bam_qname.size() + rec.bam_cigars.size() + rec.bam_seq.size() + rec.bam_qual.size() + rec.bam_aux.size();
 		rec.l_data = data_size;
 		rec.m_data = data_size;
-		uint8_t *data = new uint8_t[data_size+10];//(uint8_t *)malloc(data_size);
+		uint8_t *data = new uint8_t[data_size];
 		uint8_t *data_ptr = data;
-		std::cout << "nbytes = " << data_size << std::endl;
+		//std::cout << "nbytes = " << data_size << std::endl;
 		int i = 0;
 		for(uint8_t d : rec.bam_qname) {
 		  i++;
 			*(data_ptr++) = d;
 		}
 
-		std::cout << "i = " << i << std::endl;
-		
 		for(uint32_t d : rec.bam_cigars) {
 		  i++;
 		  *(data_ptr++) = d;
 			//data_ptr += 4;
 		}
 
-		std::cout << "i = " << i << std::endl;
+		//std::cout << "i = " << i << std::endl;
 
-		std::cout << "HERE" << std::endl;
+		//std::cout << "HERE" << std::endl;
 		for(uint8_t d : rec.bam_seq) {
-		  std::cout << "i = " << ++i << std::endl;
-		  *(data_ptr++) = d;
+		  //std::cout << "i = " << ++i << std::endl;
+			//std::cout << "> " << std::bitset<8>(d) << std::endl;
+			*(data_ptr++) = d;
 			
 		}
-		std::cout << "HERE--" << std::endl;
+		//std::cout << "HERE--" << std::endl;
 
 		for(uint8_t d : rec.bam_qual) {
 		  	  //std::vector<uint32_t> bam_cigars;
-		  std::cout << "i = " << ++i << std::endl;
+		  //std::cout << "i = " << ++i << std::endl;
 		  *(data_ptr++) = d;
+		}
+
+		for(uint8_t d : rec.bam_aux) {
+			*(data_ptr++) = d;
 		}
 		
 		rec.data = data;
 		
-		//hdr_->text = (char *)malloc(sizeof(char)*(hdr_txt.str().size()+1));
-		//strcpy(hdr->text, hdr_txt.str().c_str()
-		
-		std::cout << "DONE" << std::endl;
-		//std::cout << "format = " << fp_->format.format << "(sam = " << sam << std::endl;
-		//std::cout << sam_format1(hdr_, &rec, &fp_->line) << std::endl;
-		kstring_t *str = &fp_->line;
-		const bam1_core_t *c = &(rec.core);
-		char *qname = bam_get_qname(&rec);
-		std::cout << (c->l_qname-1) << std::endl; 
-		for(int a = 0; a < 2; a++)
-		  std::cout << qname[a];
-		std::cout << std::endl;
-		kputsn(bam_get_qname(&rec), c->l_qname-1, str); 
-		kputc('\t', str);
-		kputw(c->flag, str); 
-		kputc('\t', str); // flag
-		
-		if (c->tid >= 0) { // chr
-		  std::cout << "HERE" << std::endl;
-		  kputs(hdr_->target_name[c->tid] , str);
-		  kputc('\t', str);
-		} 
-		else 
-		  kputsn("*\t", 2, str);
-		
-		/*
-		kputw(c->pos + 1, str); kputc('\t', str); // pos
-		kputw(c->qual, str); kputc('\t', str); // qual
-		if (c->n_cigar) { // cigar
-		  uint32_t *cigar = bam_get_cigar(&rec);
-		  for (i = 0; i < c->n_cigar; ++i) {
-		    kputw(bam_cigar_oplen(cigar[i]), str);
-		    kputc(bam_cigar_opchr(cigar[i]), str);
-		  }
-		} else kputc('*', str);
-		*/
+		//std::cout << "qname = " << bam_get_qname(&rec) << std::endl;
+		//uint32_t *cigar = bam_get_cigar(&rec);
+		//std::cout << "cigar = " << std::bitset<32>(cigar[0]) << std::endl;
+		uint8_t *seq = bam_get_seq(&rec);
+		//std::cout << "0> " << bam_seqi(seq, 0) << std::endl;//std::bitset<8>(seq[0]) << std::endl;
+		//std::cout << "1> " << bam_seqi(seq, 1) << std::endl;//std::bitset<8>(seq[0]) << std::endl;
+		//std::cout << "2> " << bam_seqi(seq, 2) << std::endl;//std::bitset<8>(seq[0]) << std::endl;
+		std::cout << rec.core.l_qseq << std::endl;
+
 
 		sam_write1(fp_, hdr_, &rec);
-		std::cout << "HERE" << std::endl;
+		//std::cout << "HERE" << std::endl;
 
 	}
 
@@ -1128,7 +1108,7 @@ namespace dng {
     				  rec.set_qname(chrom);
 
     				  //std::string cigar = std::to_string(reference.size()) + "M";
-    				  rec.add_cigar('M', reference.size());
+    				  rec.add_cigar(BAM_CMATCH, 4);//reference.size());
 
     				  std::string seq;
     				  int cn = rand() % 2;
@@ -1139,14 +1119,20 @@ namespace dng {
 
     					  seq += nt2char[b];
     				  }
-				  rec.set_seq(seq);
-    				  //rec.set_seq(seq, reference.size());
+    				  std::cout << seq << std::endl;
+
+    			  //std::string tmpref = "TGCA";
+				  //rec.set_seq(tmpref);
+    			  rec.set_seq(seq);
 
 				  std::string qual = "*";
 				  rec.set_qual(qual);
 
-    				  std::string aux = std::string("RG:Z:") + std::to_string(member->mid) + "-" + member->libraries[l].name;
-    				  //rec.add_aux(aux);
+    				std::string aux = /*std::string("SMZ") + */ std::to_string(member->mid) + "-" + member->libraries[l].name;
+    				char sm[2] = {'S', 'M'};
+				  	//std::string aux = "NA001";
+    				rec.add_aux(sm, 'Z', aux);
+    				//rec.add_aux(aux);
 
     				  out.write_record(rec);
     			  }
@@ -1210,7 +1196,7 @@ namespace dng {
 
     private:
       Factory(DataFormat df) : dataformat_(df){ 
-	std::string reference_str = "TTAATAGGGCGTTGCTGGCGGGCGTTGGGTGTGGCCCGCAGTCCTGGTTGAGGATTGCCC";
+	std::string reference_str = "TTAATAGGGCGTTGCTGGCGGGCGTTGGGTGTGGCCCGCAGTCCTGGTTGAGGATTGCCCAA";
 	setReference(reference_str);
       };
 
