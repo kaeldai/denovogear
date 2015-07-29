@@ -47,8 +47,13 @@ class BAMRec : public bam1_t
 {
 public:
 
+  //BAMRec() {
+  //  &this = bam_init1();
+  //}
+
 	  void set_qname(std::string &qname) {
 		  std::copy(qname.begin(), qname.end(), std::back_inserter(bam_qname));
+		  bam_qname.push_back('\0');
 		  /*
 		  l_qname_ = qname.size();
 		  qname_ = new uint8_t[l_qname_];
@@ -57,7 +62,26 @@ public:
 	  }
 
 	  void add_cigar(char op, unsigned int len){
-		  bam_cigars.push_back(bam_cigar_gen(bam_cigar_op(op), len));
+	    //std::cout << op << " = " << bam_cigar_op(op) << "(" << std::bitset<8>(bam_cigar_op(op)) << ")" << std::endl;
+	    //std::cout << len << " = " << std::bitset<32>(len) << std::endl;
+	    uint32_t cigar = bam_cigar_gen(len, bam_cigar_op(op));
+	    uint8_t byte1 = (cigar & 0xFF000000) >> 6;
+	    uint8_t byte2 = (cigar & 0xFF0000) >> 4;
+	    uint8_t byte3 = (cigar & 0xFF00) >> 2;
+	    uint8_t byte4 = (cigar & 0xFF);
+	    /*
+	    std::cout << "["       << std::bitset<8>(byte1) << ", "
+	    << std::bitset<8>(byte2) << ", "
+	    	      << std::bitset<8>(byte3) << ", "
+	    	      << std::bitset<8>(byte4) << "]" << std::endl;
+	    */
+	    //std::cout << std::bitset<32>(cigar) << std::endl;
+	    //bam_cigars.push_back(bam_cigar_gen(bam_cigar_op(op), len));
+	    bam_cigars.push_back(byte1);
+	    bam_cigars.push_back(byte2);
+	    bam_cigars.push_back(byte3);
+	    bam_cigars.push_back(byte4);
+	    
 	  }
 
 	  void set_seq(std::string &seq) {
@@ -84,7 +108,7 @@ public:
 
 public:
 	  std::vector<uint8_t> bam_qname;
-	  std::vector<uint32_t> bam_cigars;
+	  std::vector<uint8_t> bam_cigars;
 	  std::vector<uint8_t> bam_seq;
 	  std::vector<uint8_t> bam_qual;
 
@@ -100,7 +124,7 @@ public:
 	}
 
 	void set_header(const char *text, int l_text) {
-		hdr_ = bam_hdr_init();
+	  hdr_ = sam_hdr_parse(l_text, text);//bam_hdr_init();
 		hdr_->text = (char *)malloc(sizeof(char)*(l_text));
 		strcpy(hdr_->text, text);
 		sam_hdr_write(fp_, hdr_);
@@ -125,29 +149,90 @@ public:
 
 		rec.core.l_qname = rec.bam_qname.size();
 		rec.core.l_qseq = rec.bam_seq.size()*2;
-		rec.core.n_cigar = rec.bam_cigars.size();
-		size_t data_size = rec.bam_qname.size() + rec.bam_cigars.size()*4 + rec.bam_seq.size() + rec.bam_qual.size();
-		uint8_t *data = (uint8_t *)malloc(data_size);
+		rec.core.n_cigar = rec.bam_cigars.size()/4;
+		size_t data_size = rec.bam_qname.size() + rec.bam_cigars.size() + rec.bam_seq.size() + rec.bam_qual.size();
+		rec.l_data = data_size;
+		rec.m_data = data_size;
+		uint8_t *data = new uint8_t[data_size+10];//(uint8_t *)malloc(data_size);
 		uint8_t *data_ptr = data;
+		std::cout << "nbytes = " << data_size << std::endl;
+		int i = 0;
 		for(uint8_t d : rec.bam_qname) {
+		  i++;
 			*(data_ptr++) = d;
 		}
 
+		std::cout << "i = " << i << std::endl;
+		
 		for(uint32_t d : rec.bam_cigars) {
-			*data_ptr = d;
-			data_ptr += 4;
+		  i++;
+		  *(data_ptr++) = d;
+			//data_ptr += 4;
 		}
 
+		std::cout << "i = " << i << std::endl;
+
+		std::cout << "HERE" << std::endl;
 		for(uint8_t d : rec.bam_seq) {
-			*(data_ptr++) = d;
+		  std::cout << "i = " << ++i << std::endl;
+		  *(data_ptr++) = d;
+			
 		}
+		std::cout << "HERE--" << std::endl;
+
+		for(uint8_t d : rec.bam_qual) {
+		  	  //std::vector<uint32_t> bam_cigars;
+		  std::cout << "i = " << ++i << std::endl;
+		  *(data_ptr++) = d;
+		}
+		
+		rec.data = data;
+		
+		//hdr_->text = (char *)malloc(sizeof(char)*(hdr_txt.str().size()+1));
+		//strcpy(hdr->text, hdr_txt.str().c_str()
+		
+		std::cout << "DONE" << std::endl;
+		//std::cout << "format = " << fp_->format.format << "(sam = " << sam << std::endl;
+		//std::cout << sam_format1(hdr_, &rec, &fp_->line) << std::endl;
+		kstring_t *str = &fp_->line;
+		const bam1_core_t *c = &(rec.core);
+		char *qname = bam_get_qname(&rec);
+		std::cout << (c->l_qname-1) << std::endl; 
+		for(int a = 0; a < 2; a++)
+		  std::cout << qname[a];
+		std::cout << std::endl;
+		kputsn(bam_get_qname(&rec), c->l_qname-1, str); 
+		kputc('\t', str);
+		kputw(c->flag, str); 
+		kputc('\t', str); // flag
+		
+		if (c->tid >= 0) { // chr
+		  std::cout << "HERE" << std::endl;
+		  kputs(hdr_->target_name[c->tid] , str);
+		  kputc('\t', str);
+		} 
+		else 
+		  kputsn("*\t", 2, str);
+		
+		/*
+		kputw(c->pos + 1, str); kputc('\t', str); // pos
+		kputw(c->qual, str); kputc('\t', str); // qual
+		if (c->n_cigar) { // cigar
+		  uint32_t *cigar = bam_get_cigar(&rec);
+		  for (i = 0; i < c->n_cigar; ++i) {
+		    kputw(bam_cigar_oplen(cigar[i]), str);
+		    kputc(bam_cigar_opchr(cigar[i]), str);
+		  }
+		} else kputc('*', str);
+		*/
 
 		sam_write1(fp_, hdr_, &rec);
+		std::cout << "HERE" << std::endl;
 
 	}
 
 	void save() {
-		sam_close(fp_);
+	  //sam_close(fp_);
 	}
 
 private:
@@ -1054,12 +1139,16 @@ namespace dng {
 
     					  seq += nt2char[b];
     				  }
+				  rec.set_seq(seq);
     				  //rec.set_seq(seq, reference.size());
+
+				  std::string qual = "*";
+				  rec.set_qual(qual);
 
     				  std::string aux = std::string("RG:Z:") + std::to_string(member->mid) + "-" + member->libraries[l].name;
     				  //rec.add_aux(aux);
 
-    				  //out.write_record(rec);
+    				  out.write_record(rec);
     			  }
     		  }
     	  }
@@ -1232,7 +1321,7 @@ namespace dng {
 
       double pop_prior_mutation = .1;
       double theta_ = 0.1;
-      std::array<double, 4> nuc_freqs_ = {0.3, 0.2, 0.2, 0.3};
+      std::array<double, 4> nuc_freqs_ = {{0.3, 0.2, 0.2, 0.3}};
       double ref_weight_ = 1.0;
       double transitons_mut_ = 0.015;
       double transversion_mut_ = 0.005;
