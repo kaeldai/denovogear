@@ -25,9 +25,17 @@
 #include <vector>
 #include <boost/format.hpp>
 
+#define ID_UNKNOWN -1
+#define IS_UNKNOWN(mem) ((mem)->mid == ID_UNKNOWN)
+#define IS_EMPTY(mem) (mem == nullptr)
+
+#define PED_NOPARENT "0"
 
 namespace dng {
 namespace sim {
+
+
+
 
 
 typedef size_t member_id;

@@ -1,3 +1,22 @@
+/*
+ * Copyright (c) 2014 Reed A. Cartwright
+ * Authors:  Reed A. Cartwright <reed@cartwrig.ht>, Kael Dai <kdai1@asu.edu>
+ *
+ * This file is part of DeNovoGear.
+ *
+ * DeNovoGear is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU General Public License as published by the Free Software
+ * Foundation; either version 3 of the License, or (at your option) any later
+ * version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+ * FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along with
+ * this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 #ifndef DNG_SIM_DATA_FACTORY_H
 #define DNG_SIM_DATA_FACTORY_H
 
@@ -16,13 +35,16 @@
 #include <math.h>
 #include <dng/simulator/bam.h>
 #include <dng/simulator/ped_member.h>
+#include <dng/simulator/models.h>
 #include <array>
 
+/*
 #define ID_UNKNOWN -1
 #define IS_UNKNOWN(mem) ((mem)->mid == ID_UNKNOWN)
 #define IS_EMPTY(mem) (mem == nullptr)
+*/
 
-#define PED_NOPARENT "0"
+//#define PED_NOPARENT "0"
 
 
 
@@ -34,20 +56,38 @@ namespace sim {
 typedef std::array<double, 16> genotype_dist;
 
 // Format of output data file. 'None' indicates only PED file is generated.
-enum DataFormat { VCF, BCF, SAM, BAM, CRAM, None };
+//enum DataFormat { VCF, BCF, SAM, BAM, CRAM, None };
 
 static char nt2char[] = {'A', 'C', 'G', 'T', 'N', 'R', 'U'};
 
 class Factory {
 public:
-	static Factory *newInstance(DataFormat df = DataFormat::None) {
-		return new Factory(df);
+	static SimBuilder *newInstance() {
+		return new DNGModel();
 	}
 
+
+
+
+};
+
+
+class Factory1 {
+public:
+
+	/*
+	static SimBuilder *newInstance(DataFormat df = DataFormat::None) {
+		return new Factory(df);
+	}
+	*/
+
+	/*
 	Member *AddTrio(Member *child, Member *mom, Member *dad) {
 		return AddTrio(child, (child == nullptr ? Gender::Unknown : child->sex), mom, dad);
 	}
+	*/
 
+	/*
 	Member *AddTrio(Member *child, Gender sex, Member *mom, Member *dad) {
 		// Make sure the trio includes a child
 		if(!IS_EMPTY(child) && IS_UNKNOWN(child)) {
@@ -99,13 +139,16 @@ public:
 		child->dad = (IS_UNKNOWN(dad) ? nullptr : dad);
 		return child;
 	}
+	*/
 
+	/*
 	void AddLibrary(Member *m, std::string &libname, size_t depth) {
 
 
 	}
+	*/
 
-
+	/*
 	template<typename Stream>
 	void publishPed(Stream &output) {
 		for(int a = 0; a < members.size(); a++) {
@@ -123,11 +166,12 @@ public:
 				   << (mem->get_family_name() + mem->name)  << std::endl;
 		}
 	}
+	*/
 
     void publishData() {
-		createPriorsDist();
-		initGameteDNA();
-		createLibraryMutations();
+		//createPriorsDist();
+		//initGameteDNA();
+		//createLibraryMutations();
 		//publishVCFData();
 
 		//////////////////////////
@@ -226,6 +270,7 @@ public:
 
 
 
+	/*
 	void createPriorsDist() {
 		genotype_dist ref_weights[] = { genotype_weights(theta_, nuc_freqs_, {ref_weight_, 0, 0, 0}),
 										genotype_weights(theta_, nuc_freqs_, {0, ref_weight_, 0, 0}),
@@ -238,6 +283,7 @@ public:
 		pop_priors_dists.emplace_back(std::begin(interval), std::end(interval), ref_weights[2].begin());
 		pop_priors_dists.emplace_back(std::begin(interval), std::end(interval), ref_weights[3].begin());
 	}
+	*/
 
 
 	Base transitions[4] = {G, A, T, C};
@@ -246,6 +292,7 @@ public:
 
 	char mutation_options[4][3] = {{C, G, T}, {A, G, T}, {A, C, T}, {A, C, G}};
 
+	/*
 	void createLibraryMutations() {
 		double interval[] = {0, 1, 2, 3};
 		double probs[] =  {transitons_mut_, transversion_mut_, (1.0 - transitons_mut_ - transversion_mut_)};
@@ -289,10 +336,11 @@ public:
 			}
 		}
 	}
+	*/
 
 
 
-
+	/*
 	void createFounderDNA(Member *mem) {
 		// Go through each site in the reference contig and randomly select a genotype based on the reference.
 		for(size_t site = 0; site < reference.size(); site++) {
@@ -308,7 +356,9 @@ public:
 			}
 		}
 	}
+	*/
 
+	/*
 	void createChildDNA(Member *child, Member *parent) {
 		// Temporarly create a parent
 		Member *tmp_parent = new Member(-1, -1, Gender::Unknown);
@@ -320,7 +370,9 @@ public:
 		// delete parent
 		delete tmp_parent;
 	}
+	*/
 
+	/*
 	void createChildDNA(Member *child, Member *mom, Member *dad) {
 		if(child == NULL || mom == NULL || dad == NULL)
 			return; // TODO: throw error
@@ -362,10 +414,12 @@ public:
 			}
 		}
 	}
+	*/
 
 	/**
 	* Iterate through all the members of the pedigree creating DNA based on the reference and parential DNA.
 	*/
+	/*
 	void initGameteDNA() {
 		// loop through all the members, since we don't assume anything about the order of the pedigree list we have to
 		// make mulitple loops through; first initializing the pedigree founders, then the founders' children, and then
@@ -411,6 +465,7 @@ public:
 			}
 		}
 	}
+	*/
 
 
 	std::array<size_t, 4> depth_count(Member *m, size_t pos) {
@@ -602,10 +657,12 @@ public:
 
 
 private:
+	/*
 	Factory(DataFormat df) : dataformat_(df){
 		std::string reference_str = "TTAATAGGGCGTTGCTGGCGGGCGTTGGGTGTGGCCCGCAGTCCTGGTTGAGGATTGCCCAA";
 		setReference(reference_str);
 	};
+	*/
 
 	int get_uid() { return id_list++; };
 
@@ -680,7 +737,7 @@ private:
 	std::unordered_map<family_id, std::vector<Member*>> fam_rels;
 	std::vector<Member*> members;
 
-	DataFormat dataformat_;
+	//DataFormat dataformat_;
 	// TODO: Either keep reference in file stream, or compact into 2 bits.
 	//std::string reference;
 	std::vector<Base> reference;
