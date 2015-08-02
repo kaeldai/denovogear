@@ -21,6 +21,7 @@
 #define DNG_SIM_SIMULATOR_H_
 
 #include <dng/simulator/ped_member.h>
+#include <iostream>
 #include <vector>
 #include <string>
 #include <unordered_map>
@@ -110,6 +111,25 @@ public:
 
 	}
 
+	virtual void setParameter(std::string &name, int val) {
+		if(name == "contig_len") {
+			contig_len_ = val;
+		}
+		else {
+			std::cerr << "Unrecognized parameter '" + name + "' (integer). Skipping!" << std::endl;
+		}
+	}
+
+	virtual void setParameter(std::string &name, double val) {
+		std::cerr << "Unrecognized parameter '" + name + "' (double). Skipping!" << std::endl;
+	}
+
+	virtual void setParameter(std::string &name, std::vector<double> val) {
+		std::cerr << "Unrecognized parameter '" + name + "' (double[]). Skipping!" << std::endl;
+	}
+
+
+
 	template<typename Stream>
 	void publishPed(Stream &output) {
 		for(int a = 0; a < members.size(); a++) {
@@ -128,8 +148,38 @@ public:
 		}
 	}
 
-	void publishData(std::string &basename, SeqFormat format, DataScheme scheme = SINGLE_FILE) {
-		// Determine the type
+	void publishData(std::string &fname, SeqFormat format, DataScheme scheme = SINGLE_FILE) {
+		// Detdermine the type
+		//const char *mode = (format == BAM || format == VCF ? "wb" : "w");
+		if(scheme == SINGLE_FILE) {
+			switch(format) {
+			case BAM: publishDataSAM(fname.c_str(), "wb", members); break;
+			case SAM: publishDataSAM(fname.c_str(), "w", members); break;
+			case BCF: publishDataVCF(fname.c_str(), "wb", members); break;
+			case VCF: publishDataVCF(fname.c_str(), "w", members); break;
+			}
+		}
+		else if(scheme == PER_MEMBER){
+			std::string base = fname;
+			std::string postfix = "";
+			size_t indx = fname.find_last_of(".");
+			if(indx != std::string::npos) {
+				base = fname.substr(0, indx);
+				postfix = fname.substr(indx);
+			}
+
+			for(Member *m : members) {
+				std::string file = base + "_" + std::to_string(m->mid) + postfix;
+				std::vector<Member*> mems = {m};
+				switch(format) {
+				case BAM: publishDataSAM(fname.c_str(), "wb", members); break;
+				case SAM: publishDataSAM(fname.c_str(), "w", members); break;
+				case BCF: publishDataVCF(fname.c_str(), "wb", members); break;
+				case VCF: publishDataVCF(fname.c_str(), "w", members); break;
+				}
+			}
+		}
+
 
 		// Add a .bam/.sam/.vcf/.bcf to the end of the file if needed
 
@@ -143,10 +193,10 @@ public:
 	virtual void setReference(std::string &fasta, std::string &range) = 0;
 
 
-	virtual void publishDataSAM(const char *file, const char *mode, std::vector<Member*> members) = 0;
+	virtual void publishDataSAM(const char *file, const char *mode, std::vector<Member*> &mems) = 0;
 
 
-	virtual void publishDataVCF(const char *file, const char *mode, std::vector<Member*> members) = 0;
+	virtual void publishDataVCF(const char *file, const char *mode, std::vector<Member*> &mems) = 0;
 
 
 	virtual ~SimBuilder() {
@@ -207,7 +257,7 @@ protected:
 	std::unordered_map<family_id, std::vector<Member*>> family_index; // Keep track of which families contain which members
 
 	std::vector<Base> reference;
-
+	int contig_len_;
 };
 
 

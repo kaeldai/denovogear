@@ -42,12 +42,14 @@ public:
 
 	}
 
-	void publishDataSAM(const char *file, const char *mode, std::vector<Member*> members) {
+
+	void publishDataSAM(const char *file, const char *mode, std::vector<Member*> &mems) {
 		createSeqData();
+		std::cout << "HERE" << std::endl;
 	}
 
 
-	void publishDataVCF(const char *file, const char *mode, std::vector<Member*> members) {
+	void publishDataVCF(const char *file, const char *mode, std::vector<Member*> &mems) {
 		createSeqData();
 	}
 
@@ -56,7 +58,7 @@ public:
 
 	}
 
-private:
+protected:
 
 	void createSeqData() {
 		createPriorsDist();
@@ -293,12 +295,12 @@ protected:
  */
 class Test1 : public SimBuilder {
 public:
-	void publishDataSAM(const char *file, const char *mode, std::vector<Member*> members) {
+	void publishDataSAM(const char *file, const char *mode, std::vector<Member*> &members) {
 
 	}
 
 
-	void publishDataVCF(const char *file, const char *mode, std::vector<Member*> members) {
+	void publishDataVCF(const char *file, const char *mode, std::vector<Member*> &members) {
 
 	}
 

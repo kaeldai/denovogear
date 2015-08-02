@@ -12,6 +12,7 @@
 #include <iterator>
 #include <stdio.h>
 
+
 #include "htslib/sam.h"
 
 #include <boost/range/iterator_range.hpp>
@@ -37,23 +38,27 @@ istreambuf_range(std::basic_istream<Elem, Traits> &in) {
 
 BOOST_AUTO_TEST_CASE(Test_Trio_VCF)
 {
-  dng::sim::Factory *fac = dng::sim::Factory::newInstance(dng::sim::VCF);
-  dng::sim::Member *child = fac->AddTrio(nullptr, dng::sim::Gender::Female, nullptr, nullptr);
+  //dng::sim::SimBuilder *fac = dng::sim::Factory::newInstance();
+	dng::sim::sim_ptr builder = dng::sim::Factory::newInstance(dng::sim::model_dng);
+
+	dng::sim::Member *child = builder->AddTrio(nullptr, dng::sim::Gender::Female, nullptr, nullptr);
   std::string file = filename();
   std::string ped_file = file + ".ped";
   std::string vcf_file = file + ".vcf";
 
   {
     std::ofstream fp;
-    fp.open(ped_file);
-    fac->publishPed(fp);
-    fp.flush();
-    fp.close();
+    //fp.open(ped_file);
+    //fac->publishPed(fp);
+    //fp.flush();
+    //fp.close();
     
-    fac->publishVCFData(file);
-    fac->publishData();
+    //fac->publishVCFData(file);
+    std::string samfile = "test_pedigree.sam";
+    builder->publishData(samfile, dng::sim::SeqFormat::SAM);
   }
 
+  /*
   // theta, mu, mu-somatic, mu-library, ref-weigth, nuc-freq
   dng::Pedigree::params_t params = {0.001, 1e-9, 0.0, 0.0, 1.0, std::array<double, 4>{0.3, 0.2, 0.2, 0.3}};
 
@@ -71,15 +76,11 @@ BOOST_AUTO_TEST_CASE(Test_Trio_VCF)
   //peeler.Initialize(params);
   //peeler.Construct(ped, rgs);
 
-  
-
-
-
   //peeler.library_lower(u);
   //double d = peeler.CalculateLogLikelihood(ref_index) + scale;
   //double p = peeler.CalculateMutProbability(ref_index);
   //double s = peeler.LogPeelAll();
-
+*/
 
 }
 

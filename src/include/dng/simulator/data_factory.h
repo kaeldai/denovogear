@@ -37,7 +37,7 @@
 #include <dng/simulator/ped_member.h>
 #include <dng/simulator/models.h>
 #include <array>
-
+#include <boost/algorithm/string.hpp>
 /*
 #define ID_UNKNOWN -1
 #define IS_UNKNOWN(mem) ((mem)->mid == ID_UNKNOWN)
@@ -60,14 +60,34 @@ typedef std::array<double, 16> genotype_dist;
 
 static char nt2char[] = {'A', 'C', 'G', 'T', 'N', 'R', 'U'};
 
+typedef std::unique_ptr<SimBuilder> sim_ptr;
+
+#include <memory>
+
+static std::string model_dng = "DNG";
+static std::string model_test1 = "Test1";
+
 class Factory {
 public:
-	static SimBuilder *newInstance() {
-		return new DNGModel();
+
+
+	static sim_ptr newInstance(std::string &model) {
+		if(model == model_dng) {
+			return sim_ptr(new DNGModel());
+		}
+		else if(model == model_test1) {
+			return sim_ptr(new Test1());
+		}
+		else{
+			throw std::runtime_error("Unknown model type '" + model + "'. ");
+		}
+
 	}
 
+private:
+	Factory() {
 
-
+	}
 
 };
 
