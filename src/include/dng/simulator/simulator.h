@@ -26,7 +26,6 @@
 #include <string>
 #include <unordered_map>
 
-
 namespace dng {
 namespace sim {
 
@@ -112,8 +111,8 @@ public:
 	}
 
 	virtual void setParameter(std::string &name, int val) {
-		if(name == "contig_len") {
-			contig_len_ = val;
+		if(name == "sam_seq_len") {
+			sam_seq_len_ = val;
 		}
 		else {
 			std::cerr << "Unrecognized parameter '" + name + "' (integer). Skipping!" << std::endl;
@@ -149,9 +148,10 @@ public:
 	}
 
 	void publishData(std::string &fname, SeqFormat format, DataScheme scheme = SINGLE_FILE) {
-		// Detdermine the type
-		//const char *mode = (format == BAM || format == VCF ? "wb" : "w");
+		createSeqData();
+
 		if(scheme == SINGLE_FILE) {
+			// Create a single file
 			switch(format) {
 			case BAM: publishDataSAM(fname.c_str(), "wb", members); break;
 			case SAM: publishDataSAM(fname.c_str(), "w", members); break;
@@ -160,6 +160,7 @@ public:
 			}
 		}
 		else if(scheme == PER_MEMBER){
+			// creating multiple files, turn fname.bam --> fname_{MID}.bam
 			std::string base = fname;
 			std::string postfix = "";
 			size_t indx = fname.find_last_of(".");
@@ -168,6 +169,7 @@ public:
 				postfix = fname.substr(indx);
 			}
 
+			// create a file for each member in the pedigree
 			for(Member *m : members) {
 				std::string file = base + "_" + std::to_string(m->mid) + postfix;
 				std::vector<Member*> mems = {m};
@@ -179,18 +181,15 @@ public:
 				}
 			}
 		}
-
-
-		// Add a .bam/.sam/.vcf/.bcf to the end of the file if needed
-
-		//
-
 	}
 
 	virtual void setReference(std::string &seqence, std::string &chrom, size_t start_pos) = 0;
 
 
 	virtual void setReference(std::string &fasta, std::string &range) = 0;
+
+
+	virtual void createSeqData() = 0;
 
 
 	virtual void publishDataSAM(const char *file, const char *mode, std::vector<Member*> &mems) = 0;
@@ -257,7 +256,9 @@ protected:
 	std::unordered_map<family_id, std::vector<Member*>> family_index; // Keep track of which families contain which members
 
 	std::vector<Base> reference;
-	int contig_len_;
+	std::string chrom_;
+	size_t start_pos_;
+	int sam_seq_len_;
 };
 
 

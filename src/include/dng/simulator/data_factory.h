@@ -58,7 +58,7 @@ typedef std::array<double, 16> genotype_dist;
 // Format of output data file. 'None' indicates only PED file is generated.
 //enum DataFormat { VCF, BCF, SAM, BAM, CRAM, None };
 
-static char nt2char[] = {'A', 'C', 'G', 'T', 'N', 'R', 'U'};
+//static char nt2char[] = {'A', 'C', 'G', 'T', 'N', 'R', 'U'};
 
 typedef std::unique_ptr<SimBuilder> sim_ptr;
 
@@ -255,6 +255,7 @@ public:
 		return weights;
 	}
 
+	/*
 	int Allele2Index(char c) {
 		int ret = 4;
 		switch(c) {
@@ -269,7 +270,9 @@ public:
 		}
 		return ret;
 	}
+	*/
       
+	/*
 	char Index2Allele(int indx) {
 		char ret;
 		switch(indx) {
@@ -281,7 +284,7 @@ public:
 
 		return ret;
 	}
-
+	 */
       
 	std::array<std::pair<Base, Base>, 16> genotypes = {{{A, A}, {A, C}, {A, G}, {A, T},
 												        {C, A}, {C, C}, {C, G}, {C, T},
@@ -487,7 +490,7 @@ public:
 	}
 	*/
 
-
+	/*
 	std::array<size_t, 4> depth_count(Member *m, size_t pos) {
 		char ref = reference[pos];
 		char allele1 = m->get_gamete_nt(0, pos);
@@ -523,8 +526,10 @@ public:
 	
 		return ret;
 	}
+	*/
 
 
+	/*
 	void publishVCFData(std::string &file) {
 		hts::bcf::File out(file.c_str() , "w");
 		out.AddHeaderMetadata("##fileformat=VCFv4.2");
@@ -596,6 +601,7 @@ public:
 			out.WriteRecord(rec);
 		}
 	}
+	*/
 
 	std::string getContig(Member *m) {
 		std::string contig;

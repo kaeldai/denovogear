@@ -24,6 +24,7 @@
 #include <string>
 #include <vector>
 #include <boost/format.hpp>
+#include <unordered_map>
 
 #define ID_UNKNOWN -1
 #define IS_UNKNOWN(mem) ((mem)->mid == ID_UNKNOWN)
@@ -36,13 +37,13 @@ namespace sim {
 
 
 
-
-
 typedef size_t member_id;
 typedef size_t family_id;
 typedef dng::io::Pedigree::Gender Gender;
 
-enum Base : uint8_t { A, C, G, T, N, REF, UNASSIGNED };
+enum Base : uint8_t { A = 0, C, G, T, N, REF, UNASSIGNED };
+
+static char nt2char[] = {'A', 'C', 'G', 'T', 'N', 'R', 'U'};
 
 typedef std::unordered_map<size_t, Base> reference_map;
 

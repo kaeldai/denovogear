@@ -21,8 +21,13 @@
 #define DNG_SIM_MODELS_H_
 
 #include "dng/simulator/simulator.h"
+#include <iostream>
 #include <vector>
 #include <array>
+#include <random>
+#include <string>
+#include <tuple>
+
 
 namespace dng {
 namespace sim {
@@ -42,23 +47,175 @@ public:
 
 	}
 
+	virtual void setParameter(std::string &name, int val) {
+		if(name == "gametic_mu") {
+			gametic_mu_ = val;
+		}
+		else if(name == "somatic_mu") {
+			somatic_mu_ = val;
+		}
+		else if(name == "read_mu") {
+			read_mu_ = val;
+		}
+		else if(name == "ref_weight") {
+			ref_weight_ = val;
+		}
+		else {
+			SimBuilder::setParameter(name, val);
+		}
+	}
+
+	virtual void setParameter(std::string &name, std::vector<double> val) {
+		if(name == "pop_priors") {
+			if(val.size() < 4)
+				std::cerr << "Population priors requires 4 parameters. Skipping!" << std::endl;
+			else {
+				for(int i : {0, 1, 2, 3})
+					pop_priors_[i] = val[i];
+			}
+		}
+		else {
+			SimBuilder::setParameter(name, val);
+		}
+	}
+
 
 	void publishDataSAM(const char *file, const char *mode, std::vector<Member*> &mems) {
 		createSeqData();
-		std::cout << "HERE" << std::endl;
+		// Build the bam header file from scratch
+		std::stringstream hdr_txt;
+		hdr_txt << "@HD\tVN:0.1\tSO:unknown\tGO:none" << std::endl;
+		hdr_txt << "@SQ\tSN:1\tLN:249250621" << std::endl;
+		int id = 0;
+		for(int a = 0; a < members.size(); a++) {
+			Member *mem = members[a];
+			for(int lib_idx = 0; lib_idx < mem->libraries.size(); lib_idx++) {
+				std::string id = std::to_string(mem->mid) + "-" + mem->libraries[lib_idx].name;
+				hdr_txt << "@RG" << "\t"
+				<< "ID:" << id << "\t"
+				<< "LB:" << mem->libraries[lib_idx].name << "\t"
+				<< "SM:" << mem->name << std::endl;
+			}
+		}
+
+		dng::sim::BAMFile out(file, mode);
+		out.set_header(hdr_txt.str().c_str(), hdr_txt.str().size());
+
+		for(Member *member : mems) {
+			for(int l = 0; l < member->libraries.size(); l++) {
+				for(int d = 0; d < member->libraries[l].depth; d++) {
+					dng::sim::BAMRec rec = out.init_rec();
+					rec.set_qname(chrom_);
+
+					//std::string cigar = std::to_string(reference.size()) + "M";
+					rec.add_cigar(BAM_CMATCH, reference.size());
+
+					std::string seq;
+					int cn = rand() % 2;
+					for(int pos = 0; pos < reference.size(); pos++) {
+						Base b = member->get_lib_dna(l, cn, pos);
+						if(b == REF)
+							b = reference[pos];
+
+						seq += nt2char[b];
+					}
+					std::cout << seq << std::endl;
+
+					rec.set_seq(seq);
+
+					std::string qual = "*";
+					rec.set_qual(qual);
+
+					std::string aux = /*std::string("SMZ") + */ std::to_string(member->mid) + "-" + member->libraries[l].name;
+					char sm[2] = {'S', 'M'};
+					//std::string aux = "NA001";
+					rec.add_aux(sm, 'Z', aux);
+					//rec.add_aux(aux);
+
+					out.write_record(rec);
+				}
+			}
+		}
+
+		out.save();
 	}
 
 
 	void publishDataVCF(const char *file, const char *mode, std::vector<Member*> &mems) {
-		createSeqData();
+
+		hts::bcf::File out(file , mode);
+		out.AddHeaderMetadata("##fileformat=VCFv4.2");
+		out.AddHeaderMetadata("##FORMAT=<ID=AD,Number=.,Type=Integer,Description=\"Allelic depths for the ref and alt alleles in the order listed\">");
+
+		// Take a guess of the contig full length, should add as parameter?
+		uint32_t l_chrom = static_cast<uint32_t>(start_pos_ + reference.size());
+		out.AddContig(chrom_.c_str(), l_chrom);
+		for(int a = 0; a < mems.size(); a++) {
+			Member *mem = mems[a];
+			std::string sample = (boost::format("%s:LB-%s") % mem->name % mem->get_family_name()).str();
+			out.AddSample(sample.c_str());
+		}
+		out.WriteHeader();
+
+		for(size_t pos  = start_pos_; pos < (start_pos_ + reference.size()); pos++) {
+			char ref = reference[pos];
+			int ref_indx = Allele2Index(ref);
+			int gt_totals[4] = {0, 0, 0, 0};
+			int total_reads = 0;
+			std::vector<int> gtcounts(mems.size()*4);
+			for(size_t m = 0; m < mems.size(); m++) {
+				Member *mem = mems[m];
+				std::array<size_t, 4> counts = depth_count(mem, pos);
+				for(int a : {0, 1, 2, 3}) {
+					gtcounts[m*4+a] = counts[a];
+					gt_totals[a] += counts[a];
+					total_reads += counts[a];
+				}
+			}
+
+			std::vector<int> allele_order_map;//    	  samFile *fp = sam_open(file.c_str(), "w");
+
+			allele_order_map.push_back(ref_indx);
+			for(int a = 1; a < 4; a++) {
+				int index = (ref_indx + a)%4;
+				if(gt_totals[index] > 0) {
+					//std::cout << "HERE at " << index << " having " << gt_totals[index] << "reads." << std::endl;
+					allele_order_map.push_back(index);
+				}
+			}
+
+			if(allele_order_map.size() == 1)
+				continue;
+
+			hts::bcf::Variant rec = out.InitVariant();
+			rec.target(chrom_.c_str());
+			rec.position(pos);
+
+			std::string allele_order_str;
+			allele_order_str = ref;
+			for(int indx = 1; indx < allele_order_map.size(); indx++) {
+				allele_order_str += std::string(",") + Index2Allele(allele_order_map[indx]);
+			}
+
+			rec.info("LL", static_cast<float>(1.0));
+
+			rec.alleles(allele_order_str);
+
+
+
+			std::vector<int32_t> allele_depths;
+			for(int m_indx = 0; m_indx < mems.size(); m_indx++) {
+				for(int a : allele_order_map) {
+					int ad_indx = m_indx*4 + a;//allele_order_map[a];
+					allele_depths.push_back(gtcounts[ad_indx]);
+				}
+			}
+
+			rec.samples("AD", allele_depths);
+			out.WriteRecord(rec);
+		}
 	}
 
-
-	~DNGModel() {
-
-	}
-
-protected:
 
 	void createSeqData() {
 		createPriorsDist();
@@ -66,6 +223,12 @@ protected:
 		createLibraryMutations();
 
 	}
+
+	~DNGModel() {
+
+	}
+
+protected:
 
 	void createPriorsDist() {
 		genotype_dist ref_weights[] = { genotype_weights(theta_, nuc_freqs_, {ref_weight_, 0, 0, 0}),
@@ -276,17 +439,90 @@ protected:
 		}
 	}
 
+	std::array<size_t, 4> depth_count(Member *m, size_t pos) {
+		char ref = reference[pos];
+		char allele1 = m->get_gamete_nt(0, pos);
+		if(allele1 == ' ')
+			allele1 = ref;
+
+		char allele2 = m->get_gamete_nt(1, pos);
+		if(allele2 == ' ')
+			allele2 = ref;
+
+		double interval[] = {0, 1, 2, 3, 4};
+		std::array<double, 4> probs;
+		if(allele1 == allele2) {
+			double e = (1.0-homozygote_match_)/3.0;
+			probs = {e, e, e, e};
+			probs[Allele2Index(allele1)] = homozygote_match_;
+		}
+		else {
+			double e = (1.0-heterozygote_match_)/2.0;
+			probs = {e, e, e, e};
+			probs[Allele2Index(allele1)] = homozygote_match_/2.0;
+			probs[Allele2Index(allele2)] = homozygote_match_/2.0;
+		}
+
+		std::piecewise_constant_distribution<> dist(std::begin(interval), std::end(interval), std::begin(probs));
+		std::random_device rd;
+		std::mt19937 gen(rd());
+
+		std::array<size_t, 4> ret = {0, 0, 0, 0};
+		for(int a = 0; a < depth; a++) {
+			ret[floor(dist(gen))]++;
+		}
+
+		return ret;
+	}
+
+	int Allele2Index(char c) {
+		int ret = 4;
+		switch(c) {
+		case 'a':
+		case 'A': ret = 0; break;
+		case 'c':
+		case 'C': ret = 1; break;
+		case 'g':
+		case 'G': ret = 2; break;
+		case 't':
+		case 'T': ret = 3; break;
+		}
+		return ret;
+	}
+
+	char Index2Allele(int indx) {
+		char ret;
+		switch(indx) {
+		case 0: ret = 'A'; break;
+		case 1: ret = 'C'; break;
+		case 2: ret = 'G'; break;
+		case 3: ret = 'T'; break;
+		}
+
+		return ret;
+	}
+
 protected:
 	std::vector<std::piecewise_constant_distribution<>> pop_priors_dists;
 	double theta_ = 0.1;
-	double ref_weight_ = 1.0;
+	//double ref_weight_ = 1.0;
 	double transitons_mut_ = 0.015;
 	double transversion_mut_ = 0.005;
+	double somatic_mutation_rate_ = 0.01;
+	double homozygote_match_ = 0.98;
+	double heterozygote_match_ = 0.99;
 	std::array<double, 4> nuc_freqs_ = {{0.3, 0.2, 0.2, 0.3}};
 	std::mt19937 ran_generator;
 
 	Base transversions[4][2] = {{C, T}, {C, T}, {A, G}, {A, G}};
 	Base transitions[4] = {G, A, T, C};
+	int depth = 10;
+
+	double gametic_mu_;
+	double somatic_mu_;
+	double read_mu_;
+	double ref_weight_;
+	std::array<double, 4> pop_priors_;
 };
 
 
@@ -295,6 +531,11 @@ protected:
  */
 class Test1 : public SimBuilder {
 public:
+
+	void createSeqData() {
+
+	}
+
 	void publishDataSAM(const char *file, const char *mode, std::vector<Member*> &members) {
 
 	}
