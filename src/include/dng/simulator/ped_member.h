@@ -57,6 +57,17 @@ struct Sample {
 	std::string name; // library name
 	size_t depth; // number of reeds per site.
 	reference_map dna[2]; // list of somatic mutation diffs between the reference and sample
+
+	Base get_nt(int chrom, size_t site) {
+		reference_map &rmap = dna[chrom];
+		reference_map::const_iterator nt = rmap.find(site);
+		if(nt ==  rmap.end()) {
+			return REF;
+		}
+		else {
+			return nt->second;
+		}
+	}
 };
 
 struct Member {
@@ -143,6 +154,8 @@ struct Member {
 		Sample lib;
 		lib.name = std::string(name);
 		lib.depth = depth;
+		lib.dna[0] = gametes[0];
+		lib.dna[1] = gametes[1];
 		libraries.push_back(lib);
 	}
 

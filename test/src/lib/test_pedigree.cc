@@ -42,21 +42,35 @@ BOOST_AUTO_TEST_CASE(Test_Trio_VCF)
 	dng::sim::sim_ptr builder = dng::sim::Factory::newInstance(dng::sim::model_dng);
 
 	dng::sim::Member *child = builder->AddTrio(nullptr, dng::sim::Gender::Female, nullptr, nullptr);
-  std::string file = filename();
-  std::string ped_file = file + ".ped";
-  std::string vcf_file = file + ".vcf";
+	std::string reference_str = "TTAATAGGGCGTTGCTGGCGGGCGTTGGGTGTGGCCCGCAGTCCTGGTTGAGGATTGCCCAA";
+	std::string chrom = "20";
+	builder->setReference(reference_str, chrom, 209834);
 
-  {
-    std::ofstream fp;
+	std::string file = "dngtest";
+  	std::string ped_file = file + ".ped";
+	std::string vcf_file = file + ".vcf";
+	std::string sam_file = file + ".sam";
+
+	remove(ped_file.c_str());
+	std::ofstream fp;
+	fp.open(ped_file);
+	builder->publishPed(fp);
+
+
+	remove(vcf_file.c_str());
+	builder->publishData(vcf_file, dng::sim::SeqFormat::VCF);
+
+//  {
+    //std::ofstream fp;
     //fp.open(ped_file);
     //fac->publishPed(fp);
     //fp.flush();
     //fp.close();
     
     //fac->publishVCFData(file);
-    std::string samfile = "test_pedigree.sam";
-    builder->publishData(samfile, dng::sim::SeqFormat::SAM);
-  }
+    //std::string samfile = "test_pedigree.sam";
+    //builder->publishData(samfile, dng::sim::SeqFormat::SAM);
+  //}
 
   /*
   // theta, mu, mu-somatic, mu-library, ref-weigth, nuc-freq

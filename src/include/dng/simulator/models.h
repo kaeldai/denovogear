@@ -38,7 +38,7 @@ typedef std::array<double, 16> genotype_dist;
 class DNGModel : public SimBuilder {
 public:
 
-	DNGModel() : ref_weight_(1.0), theta_(0.01), gametic_mu_(0.0001), somatic_mu_(0.0001), read_mu_(0.0001) {
+	DNGModel() : ref_weight_(0.9), theta_(0.05), gametic_mu_(0.0001), somatic_mu_(0.0001), read_mu_(0.0001) {
 		ran_generator = std::mt19937(time(0));
 		nuc_freqs_ = {{0.3, 0.2, 0.2, 0.3}};
 	}
@@ -171,38 +171,37 @@ public:
 		for(size_t pos  = 0; pos < l_reference; pos++) {
 			Base ref = reference[pos];
 
-			// count the number of A,C,G,Ts across all the libraries
-			int gt_totals[4] = {0, 0, 0, 0};
+
+			int gt_totals[4] = {0, 0, 0, 0}; // total num of A,C,G,Ts across all the libraries
 			int total_reads = 0;
-			std::vector<uint32_t> gtcounts(n_libs*4);
+			std::vector<uint32_t> gtcounts;//(n_libs*4); // individual A,C,G, and T counts for each library
 			for(size_t m = 0; m < mem_subset.size(); m++) {
 				Member *mem = mem_subset[m];
 				for(size_t l = 0; l < mem->libraries.size(); l++) {
-
-
-				}
-
-				std::array<size_t, 4> counts = depth_count(mem, pos);
-				for(int a : {0, 1, 2, 3}) {
-					gtcounts[m*4+a] = counts[a];
-					gt_totals[a] += counts[a];
-					total_reads += counts[a];
+					std::vector<Base> reads = baseCall(mem->libraries[l], pos);
+					int gt_tmp[4] = {0, 0, 0, 0};
+					for(int r : reads) {
+						gt_tmp[r]++;
+						gt_totals[r]++;
+					}
+					gtcounts.push_back(gt_tmp[0]);
+					gtcounts.push_back(gt_tmp[1]);
+					gtcounts.push_back(gt_tmp[2]);
+					gtcounts.push_back(gt_tmp[3]);
 				}
 			}
 
 
-
+			// allele order should start with the ref, and include only those nucleotides which have a read
 			std::vector<int> allele_order_map;
-
 			allele_order_map.push_back(ref);
 			for(int a = 1; a < 4; a++) {
 				int index = (ref + a)%4;
 				if(gt_totals[index] > 0) {
-					//std::cout << "HERE at " << index << " having " << gt_totals[index] << "reads." << std::endl;
+					//std::cout << "HERE at site " << pos << std::endl;
 					allele_order_map.push_back(index);
 				}
 			}
-
 			if(allele_order_map.size() == 1)
 				continue;
 
@@ -215,65 +214,113 @@ public:
 			for(int indx = 1; indx < allele_order_map.size(); indx++) {
 				allele_order_str += std::string(",") + Index2Allele(allele_order_map[indx]);
 			}
-
-			rec.info("LL", static_cast<float>(1.0));
-
 			rec.alleles(allele_order_str);
 
 
+			/*
 			std::vector<int32_t> allele_depths;
 			for(int m_indx = 0; m_indx < mem_subset.size(); m_indx++) {
-				for(int a : allele_order_map) {mems
-					int ad_indx = m_indx*4 + a;//allele_order_map[a];
-					allele_depths.push_back(gtcounts[ad_indx]);
+				Member *mem = mem_subset[m];
+				for(size_t l = 0; l < mem->libraries.size(); l++) {
+					for(int a : allele_order_map) {
+						int ad_indx = m_indx*4 + a;//allele_order_map[a];
+						allele_depths.push_back(gtcounts[ad_indx]);
+					}
 				}
 			}
+			*/
+
+			std::vector<int32_t> allele_depths;
+			for(int lindx = 0; lindx+3 < gtcounts.size(); lindx += 4) {
+				for(int a : allele_order_map) {
+					int gt_loc = lindx + a;
+					allele_depths.push_back(gtcounts[gt_loc]);
+				}
+			}
+
+			//std::cout << allele_order_str << std::endl;
+			std::cout << pos << ": [";
+			for(int a = 0; a < gtcounts.size(); a++) {
+				std::cout << gtcounts[a];
+				if(a%4 == 3) {
+					std::cout << "]";
+					if(a+1 < gtcounts.size())
+						std::cout << "[";
+				}
+				else {
+					std::cout << ", ";
+				}
+			}
+			std::cout << std::endl;
+
 
 			rec.samples("AD", allele_depths);
 			out.WriteRecord(rec);
 		}
 	}
 
+	std::vector<Base> baseCall(Sample &lib, size_t site) {
+		std::array<int, 5> interval = {0, 1, 2, 3, 4};
+		Base ref = reference[site];
+		Base genotype[2] = {lib.get_nt(0, site), lib.get_nt(1, site)};
+		if(genotype[0] == REF)
+			genotype[0] = ref;
+		if(genotype[1] == REF)
+			genotype[1] = ref;
 
-	void readSeq(Sample &lib) {
-		double ref_bias = 1.05;
-		double m_ref = (1-read_mu_)*ref_bias; // prob a read is correct given the site is the same as the reference
-		double e_ref = (1.0 - m_ref)/3.0; // prob that read is diff from
-		double em = read_mu_*ref_bias/3.0; // read matches references but is still an err
-		double mm = (1.0 - read_mu_)*(1.0-ref_bias*read_mu_/3.0)/(1.0-read_mu_/3.0);
-		double ee = (1.0 - em - mm);
+		//if(genotype[0] != ref || genotype[1] != ref) {
+		//	std::cout << "library " << lib.name << " has variance at site " << site << std::endl;
+		//}
 
-
-		std::array<std::array<std::array<double, 4>, 4>, 4> read_err_dists;
-		for(Base ref : {A, C, G, T}) {
-			for(Base allele : {A, C, G, T}) {
-				if(ref == allele) {
-					read_err_dists[ref][allele] = {e_ref, e_ref, e_ref, e_ref};
-					read_err_dists[ref][allele][allele] = m_ref;
-				}
-				else {
-					read_err_dists[ref][allele] = {ee, ee, ee, ee};
-					read_err_dists[ref][allele][ref] = em;
-					read_err_dists[ref][allele][allele] = mm;
-				}
-			}
-
-		}
-
+		std::array<unsigned int, 4> prev_reads = {0, 0, 0, 0};
+		std::vector<Base> reads;
 		for(int d = 0; d < lib.depth; d++) {
-			for(int site = 0; site < reference.size(); site++) {
 
-			}
+			// TODO: If homozygote don't call rand
+			int chrom = rand() % 2;
+			Base allele = genotype[chrom];
+
+			std::array<double, 5> &weights = read_err_weights[ref][allele];
+			std::array<double, 4> probs;
+			probs[0] = (weights[0] + prev_reads[0])/(weights[4] + d);
+			probs[1] = (weights[1] + prev_reads[1])/(weights[4] + d);
+			probs[2] = (weights[2] + prev_reads[2])/(weights[4] + d);
+			probs[3] = (weights[3] + prev_reads[3])/(weights[4] + d);
+
+			std::piecewise_constant_distribution<> dist(std::begin(interval), std::end(interval), probs.begin());
+			int read = floor(dist(ran_generator));
+			//if(read != allele) {
+			//	std::cout << lib.name << " read error : " << allele << " --> " << read << std::endl;
+			//}
+
+			prev_reads[read]++;
+			reads.push_back(index2Base[read]);
 		}
+
+		return reads;
+	}
+
+
+	/*
+	void readSeq(Sample &lib) {
+
 
 	}
+	*/
 
 
 	void createSeqData() {
 		createPriorsDist();
 		initGameteDNA();
 		createLibraryMutations();
+		createReadWeights();
 
+		/////////////////////////////////// For Testing Only //////////////////////////
+		std::cout << "       ";
+		for(int a = 0; a*10 < reference.size() && a < 10; a++) {
+			std::cout << a << "         ";
+		}
+		std::cout << std::endl;
 		std::cout << "ref:   ";
 		for(Base b : reference) {
 			std::cout << nt2char[b];
@@ -295,7 +342,7 @@ public:
 			}
 			std::cout << std::endl;
 		}
-
+		///////////////////////////////////
 	}
 
 	~DNGModel() {
@@ -348,6 +395,21 @@ protected:
 		weights[15] = (alpha[3] + alpha[3]*alpha[3]) / alpha_sum2; // TT
 
 		return weights;
+	}
+
+	void createReadWeights() {
+		double ref_bias = 1.1; // A bias the sequencer gives towards the reference allele
+		double err = read_mu_/3.0; // prob read doesn't match actual allele
+		double match = 1.0 - read_mu_; // prob read is correct
+
+		for(Base ref : {A, C, G, T}) {
+			for(Base allele : {A, C, G, T}) {
+				std::array<double, 5> &weights = read_err_weights[ref][allele];
+				weights[allele] = match;
+				weights[ref] *= ref_bias;
+				weights[4] = weights[0] + weights[1] + weights[2] + weights[3];
+			}
+		}
 	}
 
 	/**
@@ -468,52 +530,9 @@ protected:
 				}
 			}
 		}
-
-
-		/*
-		double gametic_mut_i = 1.0-gametic_mu_;
-
-		// Weighted probs of type of mutation; transtion, transversion, or none.
-		double interval[] = {0, 1, 2, 3};
-		double probs[] =  {transitons_mut_, transversion_mut_, (1.0 - transitons_mut_ - transversion_mut_)};
-		std::piecewise_constant_distribution<> dist(std::begin(interval), std::end(interval), std::begin(probs));
-		std::random_device rd;
-		std::mt19937 gen(rd());
-
-		child->inherit_dna(mom, dad);
-		// Go through the DNA and
-		// TODO: Figure out a way to sample a few sites rather than iterate through the entire contig
-		for(int site = 0; site < reference.size(); site++) {
-			for(size_t chrom : {0, 1}) {
-				int mut_type = floor(dist(gen));
-				if(mut_type == 2) {
-					// No Mutation
-					continue;
-				}
-				else if(mut_type == 0) {
-					// Transition mutation
-					Base oldbase = child->get_gamete_nt(chrom, site);
-					if(oldbase == REF)
-						oldbase = reference[site];
-					child->update_gamete_dna(chrom, site, transitions[oldbase]);
-				}
-				else {
-					// Transversion
-					Base oldbase = child->get_gamete_nt(chrom, site);
-					if(oldbase == REF)
-						oldbase = reference[site];
-
-					int r = rand() % 2; // 2 possible choices for each transverison
-					child->update_gamete_dna(chrom, site, transversions[oldbase][r]);
-
-				}
-			}
-		}
-		*/
 	}
 
 	void createLibraryMutations() {
-
 		// Creates random mutations along the library contigs using a geometric distribution similar to
 		// createChildDNA(). If not going to change then consider merging code.
 		size_t l_reference = reference.size();
@@ -546,57 +565,15 @@ protected:
 						Base new_nt = index2Base[rand() % 4];
 						if(new_nt != old_nt) {
 							m->update_lib_dna(l_indx, chrom, site, new_nt);
+							std::cout << "Adding " << m->libraries[l_indx].name << " mutation at site " << site << std::endl;
 						}
 					}
 				}
 			}
 		}
-
-		/*
-		double interval[] = {0, 1, 2, 3};
-		double probs[] =  {transitons_mut_, transversion_mut_, (1.0 - transitons_mut_ - transversion_mut_)};
-		std::piecewise_constant_distribution<> dist(std::begin(interval), std::end(interval), std::begin(probs));
-		std::random_device rd;
-		std::mt19937 gen(rd());
-
-		for(Member *m : members) {
-			// If user hasn't specified any libraries create a default one
-			if(m->libraries.size() == 0) {
-				std::string libname = std::string(m->name) + "-" + m->get_family_name();
-				m->add_library(libname, 10);
-			}
-
-			for(size_t l_indx = 0; l_indx < m->libraries.size(); l_indx++) {
-				for(size_t site = 0; site < reference.size(); site++) {
-					for(size_t chrom : {0, 1}) {
-						int mut_type = floor(dist(gen));
-						if(mut_type == 2) {
-							// No Mutation
-							continue;
-						}
-						else if(mut_type == 0) {
-							// Transition mutation
-							Base oldbase = m->get_lib_dna(l_indx, chrom, site);
-							if(oldbase == REF)
-							oldbase = reference[site];
-							m->update_lib_dna(l_indx, chrom, site, transitions[oldbase]);
-						}
-						else {
-							// Transversion
-							Base oldbase = m->get_lib_dna(l_indx, chrom, site);
-							if(oldbase == REF)
-							oldbase = reference[site];
-
-							int r = rand() % 2; // 2 possible choices for each transverison
-							m->update_lib_dna(l_indx, chrom, site, transversions[oldbase][r]);
-						}
-					}
-				}
-			}
-		}
-		*/
 	}
 
+	/*
 	std::array<size_t, 4> depth_count(Member *m, size_t pos) {
 		char ref = reference[pos];
 		char allele1 = m->get_gamete_nt(0, pos);
@@ -632,23 +609,8 @@ protected:
 
 		return ret;
 	}
-
-	/*
-	int Allele2Index(char c) {
-		int ret = 4;
-		switch(c) {
-		case 'a':
-		case 'A': ret = 0; break;
-		case 'c':
-		case 'C': ret = 1; break;
-		case 'g':
-		case 'G': ret = 2; break;
-		case 't':
-		case 'T': ret = 3; break;
-		}
-		return ret;
-	}
 	*/
+
 
 	// TODO: Change to Base
 	char Index2Allele(int indx) {
@@ -665,17 +627,18 @@ protected:
 
 
 protected:
-	double ref_weight_ = 1.0; // weight given to reference
-	double theta_ = 0.01; // population diversity
+	double ref_weight_; // weight given to reference
+	double theta_; // population diversity
 	std::array<double, 4> nuc_freqs_ = {{0.3, 0.2, 0.2, 0.3}}; // nucleotide freq's in A,C,G,T order
 	double gametic_mu_ = 0.0001; // prob of gamete cell line mutation
 	double somatic_mu_ = 0.0001; // prob of somatic cell mutation
-	double read_mu_; // prob of error in sequence read;
+	double read_mu_ = 0.0001; // prob of error in sequence read;
 
 	double default_depth_ = 10; // Should be set uniquly for each library.
 
 
 	std::vector<std::piecewise_constant_distribution<>> pop_priors_dists;
+	std::array<std::array<std::array<double, 5>, 4>, 4> read_err_weights;
 
 	double transitons_mut_ = 0.015;
 	double transversion_mut_ = 0.005;
