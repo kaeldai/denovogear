@@ -44,6 +44,7 @@ typedef dng::io::Pedigree::Gender Gender;
 enum Base : uint8_t { A = 0, C, G, T, N, REF, UNASSIGNED };
 
 static char nt2char[] = {'A', 'C', 'G', 'T', 'N', 'R', 'U'};
+static Base index2Base[] = {A, C, G, T, N};
 
 typedef std::unordered_map<size_t, Base> reference_map;
 

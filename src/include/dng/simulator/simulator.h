@@ -183,10 +183,21 @@ public:
 		}
 	}
 
-	virtual void setReference(std::string &seqence, std::string &chrom, size_t start_pos) = 0;
+	virtual void setReference(std::string &seqence, std::string &chrom, size_t start_pos) {
+		chrom_ = std::string(chrom);
+		start_pos_ = start_pos;
+
+		reference.clear();
+		for(int nt : seqence) {
+			reference.push_back(char2base(nt));
+		}
+
+	}
 
 
-	virtual void setReference(std::string &fasta, std::string &range) = 0;
+	virtual void setReference(std::string &fasta, std::string &range) {
+
+	}
 
 
 	virtual void createSeqData() = 0;
@@ -246,6 +257,26 @@ private:
 			family_index.erase(source);
 		}
 	}
+
+protected:
+	static inline Base char2base(char c) {
+		Base ret;
+		switch(c) {
+		case 'A':
+		case 'a': ret = A; break;
+		case 'C':
+		case 'c': ret = C; break;
+		case 'G':
+		case 'g': ret = G; break;
+		case 'T':
+		case 't': ret = T; break;
+		case 'N':
+		case 'n': ret = N; break;
+		default: ret = UNASSIGNED;
+		}
+		return ret;
+	}
+
 
 protected:
 	// Just use an incrementing list of integers for assigning unique member and family ids. Pedigree building is not multithreaded.

@@ -188,6 +188,7 @@ public:
 	}
 	*/
 
+	/*
     void publishData() {
 		//createPriorsDist();
 		//initGameteDNA();
@@ -218,6 +219,7 @@ public:
 		}
 		//////////////////////////
     }
+    */
 
 
       
