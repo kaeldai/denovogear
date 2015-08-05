@@ -78,13 +78,27 @@ public:
 
 
 	void publishDataSAM(const char *file, const char *mode, std::vector<Member*> &mems) {
-		createSeqData();
+		std::cout << "publishDataSAM()" << std::endl;
+
 		// Build the bam header file from scratch
 		std::stringstream hdr_txt;
 		hdr_txt << "@HD\tVN:0.1\tSO:unknown\tGO:none" << std::endl;
 		hdr_txt << "@SQ\tSN:1\tLN:249250621" << std::endl;
 		int id = 0;
+		for(Member *member : mems) {
+			for(Sample &lib : member->libraries) {
+				std::string id = member->name + "-" + lib.name;
+				hdr_txt << "@RG" << "\t"
+				        << "ID:" << id << "\t"
+				        << "LB:" << lib.name << "\t"
+				        << "SM:" << member->name << std::endl;
+			}
+		}
+
+		/*
 		for(int a = 0; a < mems.size(); a++) {
+
+
 			Member *mem = mems[a];
 			for(int lib_idx = 0; lib_idx < mem->libraries.size(); lib_idx++) {
 				std::string id = std::to_string(mem->mid) + "-" + mem->libraries[lib_idx].name;
@@ -94,46 +108,51 @@ public:
 				<< "SM:" << mem->name << std::endl;
 			}
 		}
+		 */
 
 		dng::sim::BAMFile out(file, mode);
 		out.set_header(hdr_txt.str().c_str(), hdr_txt.str().size());
 
+
+		size_t contig_len_ = 30;
 		for(Member *member : mems) {
 			for(int l = 0; l < member->libraries.size(); l++) {
-				for(int d = 0; d < member->libraries[l].depth; d++) {
-					dng::sim::BAMRec rec = out.init_rec();
-					rec.set_qname(chrom_);
+				Sample &library = member->libraries[l];
 
-					//std::string cigar = std::to_string(reference.size()) + "M";
-					rec.add_cigar(BAM_CMATCH, reference.size());
-
-					std::string seq;
-					int cn = rand() % 2;
-					for(int pos = 0; pos < reference.size(); pos++) {
-						Base b = member->get_lib_dna(l, cn, pos);
-						if(b == REF)
-							b = reference[pos];
-
-						seq += nt2char[b];
+				for(int pos = 0; pos < reference.size(); pos += contig_len_) {
+					size_t l_ccontig = (pos + contig_len_ < reference.size() ? contig_len_ : reference.size() - pos);
+					// TODO: Figure out a better data structure for storing the results. Row base look-ups are not efficient.
+					std::vector<std::vector<Base>> reads;
+					for(int next = 0; next < l_ccontig; next++) {
+						reads.push_back(baseCall(library, next+pos));
 					}
-					std::cout << seq << std::endl;
 
-					rec.set_seq(seq);
 
-					std::string qual = "*";
-					rec.set_qual(qual);
+					for(int d = 0; d < library.depth; d++) {
+						dng::sim::BAMRec rec = out.init_rec();
+						rec.set_qname(chrom_);
 
-					std::string aux = /*std::string("SMZ") + */ std::to_string(member->mid) + "-" + member->libraries[l].name;
-					char sm[2] = {'S', 'M'};
-					//std::string aux = "NA001";
-					rec.add_aux(sm, 'Z', aux);
-					//rec.add_aux(aux);
+						rec.add_cigar(BAM_CMATCH, l_ccontig);
 
-					out.write_record(rec);
+						std::string seq;
+						for(int site = 0; site < l_ccontig; site++) {
+							seq += nt2char[reads[site][d]];
+						}
+
+						rec.set_seq(seq);
+
+						std::string qual = "*";
+						rec.set_qual(qual);
+
+						std::string aux = std::to_string(member->mid) + "-" + member->libraries[l].name;
+						char sm[2] = {'S', 'M'};
+						rec.add_aux(sm, 'Z', aux);
+
+						out.write_record(rec);
+					}
 				}
 			}
 		}
-
 		out.save();
 	}
 

@@ -149,6 +149,7 @@ public:
 
 	void publishData(std::string &fname, SeqFormat format, DataScheme scheme = SINGLE_FILE) {
 		createSeqData();
+		std::cout << "publishData()" << std::endl;
 
 		if(scheme == SINGLE_FILE) {
 			// Create a single file

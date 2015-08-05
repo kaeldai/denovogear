@@ -57,8 +57,11 @@ BOOST_AUTO_TEST_CASE(Test_Trio_VCF)
 	builder->publishPed(fp);
 
 
-	remove(vcf_file.c_str());
-	builder->publishData(vcf_file, dng::sim::SeqFormat::VCF);
+	//remove(vcf_file.c_str());
+	//builder->publishData(vcf_file, dng::sim::SeqFormat::VCF);
+
+	remove(sam_file.c_str());
+	builder->publishData(sam_file, dng::sim::SeqFormat::SAM);
 
 //  {
     //std::ofstream fp;
