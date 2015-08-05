@@ -25,6 +25,7 @@
 #include <vector>
 #include <string>
 #include <unordered_map>
+#include "htslib/faidx.h"
 
 namespace dng {
 namespace sim {
@@ -197,6 +198,19 @@ public:
 
 
 	virtual void setReference(std::string &fasta, std::string &range) {
+		fai_build(fasta.c_str());
+		//std::string fai_file = fasta + ".fai";
+		faidx_t *fai = fai_load(fasta.c_str());
+		int len;
+		char *char_ref = fai_fetch(fai, range.c_str(), &len);
+		std::cout << len << std::endl;
+		reference.clear();
+		for(int a = 0; a < len; a++) {
+			std::cout << char_ref[a];
+			reference.push_back(char2base(char_ref[a]));
+		}
+		std::cout << std::endl;
+		delete char_ref;
 
 	}
 

@@ -44,7 +44,10 @@ BOOST_AUTO_TEST_CASE(Test_Trio_VCF)
 	dng::sim::Member *child = builder->AddTrio(nullptr, dng::sim::Gender::Female, nullptr, nullptr);
 	std::string reference_str = "TTAATAGGGCGTTGCTGGCGGGCGTTGGGTGTGGCCCGCAGTCCTGGTTGAGGATTGCCCAA";
 	std::string chrom = "20";
-	builder->setReference(reference_str, chrom, 209834);
+	std::string range = "5:126385080-126385280";
+	std::string fasta = "sample-5.3_ref.fasta";
+	builder->setReference(fasta, range);
+	//builder->setReference(reference_str, chrom, 209834);
 
 	std::string file = "dngtest";
   	std::string ped_file = file + ".ped";
