@@ -193,9 +193,12 @@ public:
 			*(data_ptr++) = d;
 		}
 
+		//std::cout << "rec.data = data" << std::endl;
 		rec.data = data;
 
+		//std::cout << "sam_write1" << std::endl;
 		sam_write1(handle(), hdr(), &rec);
+		//std::cout << "done sam_write1" << std::endl;
 	}
 
 	bam_hdr_t *hdr() {

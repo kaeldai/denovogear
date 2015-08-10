@@ -78,8 +78,6 @@ public:
 
 
 	void publishDataSAM(const char *file, const char *mode, std::vector<Member*> &mems) {
-		std::cout << "publishDataSAM()" << std::endl;
-
 		// Build the bam header file from scratch
 		std::stringstream hdr_txt;
 		hdr_txt << "@HD\tVN:0.1\tSO:unknown\tGO:none" << std::endl;
@@ -95,21 +93,6 @@ public:
 			}
 		}
 
-		/*
-		for(int a = 0; a < mems.size(); a++) {
-
-
-			Member *mem = mems[a];
-			for(int lib_idx = 0; lib_idx < mem->libraries.size(); lib_idx++) {
-				std::string id = std::to_string(mem->mid) + "-" + mem->libraries[lib_idx].name;
-				hdr_txt << "@RG" << "\t"
-				<< "ID:" << id << "\t"
-				<< "LB:" << mem->libraries[lib_idx].name << "\t"
-				<< "SM:" << mem->name << std::endl;
-			}
-		}
-		 */
-
 		dng::sim::BAMFile out(file, mode);
 		out.set_header(hdr_txt.str().c_str(), hdr_txt.str().size());
 
@@ -121,17 +104,23 @@ public:
 
 				for(int pos = 0; pos < reference.size(); pos += contig_len_) {
 					size_t l_ccontig = (pos + contig_len_ < reference.size() ? contig_len_ : reference.size() - pos);
+					//std::cout << "l_ccontig = " << l_ccontig << std::endl;
+
 					// TODO: Figure out a better data structure for storing the results. Row base look-ups are not efficient.
 					std::vector<std::vector<Base>> reads;
 					for(int next = 0; next < l_ccontig; next++) {
 						reads.push_back(baseCall(library, next+pos));
 					}
 
+					//std::cout << "HERE" << std::endl;
 
+					//std::cout << "library depth = " << library.depth << std::endl;
 					for(int d = 0; d < library.depth; d++) {
+						//std::cout << "init_rec()" << std::endl;
 						dng::sim::BAMRec rec = out.init_rec();
 						rec.set_qname(chrom_);
 
+						//std::cout << "Adding cigar " << std::endl;
 						rec.add_cigar(BAM_CMATCH, l_ccontig);
 
 						std::string seq;
@@ -257,6 +246,7 @@ public:
 				}
 			}
 
+			/*
 			//std::cout << allele_order_str << std::endl;
 			std::cout << pos << ": [";
 			for(int a = 0; a < gtcounts.size(); a++) {
@@ -271,7 +261,7 @@ public:
 				}
 			}
 			std::cout << std::endl;
-
+			*/
 
 			rec.samples("AD", allele_depths);
 			out.WriteRecord(rec);
@@ -334,6 +324,7 @@ public:
 		createLibraryMutations();
 		createReadWeights();
 
+		/*
 		/////////////////////////////////// For Testing Only //////////////////////////
 		std::cout << "       ";
 		for(int a = 0; a*10 < reference.size() && a < 10; a++) {
@@ -362,6 +353,7 @@ public:
 			std::cout << std::endl;
 		}
 		///////////////////////////////////
+		*/
 	}
 
 	~DNGModel() {
@@ -374,13 +366,16 @@ protected:
 		genotype_dist ref_weights[] = { genotype_weights(theta_, nuc_freqs_, {ref_weight_, 0, 0, 0}),
 										genotype_weights(theta_, nuc_freqs_, {0, ref_weight_, 0, 0}),
 										genotype_weights(theta_, nuc_freqs_, {0, 0, ref_weight_, 0}),
-										genotype_weights(theta_, nuc_freqs_, {0, 0, 0, ref_weight_})};
+										genotype_weights(theta_, nuc_freqs_, {0, 0, 0, ref_weight_}),
+										genotype_weights(theta_, nuc_freqs_, {0, 0, 0, 0})};
 		double interval[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
 
 		pop_priors_dists.emplace_back(std::begin(interval), std::end(interval), ref_weights[0].begin());
 		pop_priors_dists.emplace_back(std::begin(interval), std::end(interval), ref_weights[1].begin());
 		pop_priors_dists.emplace_back(std::begin(interval), std::end(interval), ref_weights[2].begin());
 		pop_priors_dists.emplace_back(std::begin(interval), std::end(interval), ref_weights[3].begin());
+		pop_priors_dists.emplace_back(std::begin(interval), std::end(interval), ref_weights[4].begin());
+		//genotype_prior_[4] = population_prior(p.theta, p.nuc_freq, {0, 0, 0, 0});
 	}
 
 	genotype_dist genotype_weights(double theta, std::array<double, 4> nuc_freq, std::array<double,4> prior) {
@@ -482,7 +477,6 @@ protected:
 
 	void createFounderDNA(Member *mem) {
 		// Go through each site in the reference contig and randomly select a genotype based on the reference.
-		std::cout << "Founder " << mem->name << std::endl;
 		for(size_t site = 0; site < reference.size(); site++) {
 			Base ref = reference[site];
 			std::pair<Base, Base> gt = genotypes[floor(pop_priors_dists[ref](ran_generator))];
@@ -541,7 +535,7 @@ protected:
 
 				// Randomly select a base, update child genotype if new base differs from the old.
 				Base new_nt = index2Base[rand() % 4];
-				std::cout << "site " << site << ": " << old_nt << " --> " << new_nt << std::endl;
+				//std::cout << "site " << site << ": " << old_nt << " --> " << new_nt << std::endl;
 
 				if(new_nt != old_nt) {
 					// TODO: If memory becomes an issue we should erase new mutations that matches the reference
@@ -584,51 +578,13 @@ protected:
 						Base new_nt = index2Base[rand() % 4];
 						if(new_nt != old_nt) {
 							m->update_lib_dna(l_indx, chrom, site, new_nt);
-							std::cout << "Adding " << m->libraries[l_indx].name << " mutation at site " << site << std::endl;
+							//std::cout << "Adding " << m->libraries[l_indx].name << " mutation at site " << site << std::endl;
 						}
 					}
 				}
 			}
 		}
 	}
-
-	/*
-	std::array<size_t, 4> depth_count(Member *m, size_t pos) {
-		char ref = reference[pos];
-		char allele1 = m->get_gamete_nt(0, pos);
-		if(allele1 == ' ')
-			allele1 = ref;
-
-		char allele2 = m->get_gamete_nt(1, pos);
-		if(allele2 == ' ')
-			allele2 = ref;
-
-		double interval[] = {0, 1, 2, 3, 4};
-		std::array<double, 4> probs;
-		if(allele1 == allele2) {
-			double e = (1.0-homozygote_match_)/3.0;
-			probs = {e, e, e, e};
-			probs[allele1] = homozygote_match_;
-		}
-		else {
-			double e = (1.0-heterozygote_match_)/2.0;
-			probs = {e, e, e, e};
-			probs[allele1] = homozygote_match_/2.0;
-			probs[allele2] = homozygote_match_/2.0;
-		}
-
-		std::piecewise_constant_distribution<> dist(std::begin(interval), std::end(interval), std::begin(probs));
-		std::random_device rd;
-		std::mt19937 gen(rd());
-
-		std::array<size_t, 4> ret = {0, 0, 0, 0};
-		for(int a = 0; a < 10; a++) {
-			ret[floor(dist(gen))]++;
-		}
-
-		return ret;
-	}
-	*/
 
 
 	// TODO: Change to Base

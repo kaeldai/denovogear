@@ -150,7 +150,7 @@ public:
 
 	void publishData(std::string &fname, SeqFormat format, DataScheme scheme = SINGLE_FILE) {
 		createSeqData();
-		std::cout << "publishData()" << std::endl;
+		//std::cout << "publishData()" << std::endl;
 
 		if(scheme == SINGLE_FILE) {
 			// Create a single file
@@ -190,9 +190,11 @@ public:
 		start_pos_ = start_pos;
 
 		reference.clear();
+
 		for(int nt : seqence) {
 			reference.push_back(char2base(nt));
 		}
+		std::cout << reference.size() << std::endl;
 
 	}
 
@@ -206,12 +208,18 @@ public:
 		std::cout << len << std::endl;
 		reference.clear();
 		for(int a = 0; a < len; a++) {
-			std::cout << char_ref[a];
+			//std::cout << char_ref[a];
 			reference.push_back(char2base(char_ref[a]));
 		}
-		std::cout << std::endl;
 		delete char_ref;
 
+		size_t chrom_indx = range.find(":");
+		if(chrom_indx == std::string::npos) {
+			chrom_ = std::string(range);
+		}
+		else {
+			chrom_ = std::string(range.substr(0, chrom_indx));
+		}
 	}
 
 
