@@ -3,14 +3,12 @@
 #include <boost/test/unit_test.hpp>
 #include "dng/io/ped.h"
 
-#include "dng/simulator/data_factory.h"
+#include "dng/simulator/models.h"
 #include <fstream>
 #include <iterator>
 #include <iosfwd>
 #include <iostream>
-#include <boost/tokenizer.hpp>
 
-using namespace dng::sim;
 
 // Copied from call.cc
 template<class Elem, class Traits> inline
@@ -20,7 +18,6 @@ istreambuf_range(std::basic_istream<Elem, Traits> &in) {
                std::istreambuf_iterator<Elem, Traits>(in),
                std::istreambuf_iterator<Elem, Traits>());
 }
-
 
 
 /*
@@ -46,120 +43,54 @@ void confirm(dng::sim::Member *orig, dng::io::Pedigree &ped) {
 }
 
 
-/**
- * Creates a temporary pedigree file for ped.h input
- */
-std::string create_p(dng::sim::Factory *fac) {
+void run_test(dng::sim::SimBuilder &sim)
+{
+  // Use the simulator to create a pedigree and write to a temporary file
+  //dng::sim::ExtendedTree trio;
   char fname[] = "pedigree_XXXXXX";
   int fd = mkstemp(fname);
-  assert(fd != -1);
-
   std::ofstream ped_io;
   ped_io.open(fname);
-  fac->publishPed(ped_io);
+  sim.publishPed(ped_io);
   ped_io.flush();
   ped_io.close();
 
-  return std::string(fname);
+  // Mimic the way call.cc opens the pedigree file
+  dng::io::Pedigree ped;
+  std::ifstream ped_file(fname);
+  ped.Parse(istreambuf_range(ped_file));
+
+  // Check that pedigree is correct
+  const dng::io::Pedigree::MemberTable family = ped.table();
+  std::vector<dng::sim::Member*> sim_fam = sim.getMembers();
+  BOOST_CHECK(family.size() == (sim_fam.size()+1)); // Check ped size
+  for(dng::sim::Member *m : sim_fam) {
+    confirm(m, ped); // compares each member with ped with the original data from the simulator
+  }
+
+  // delete the temporary ped file
+  remove(fname);
 }
 
-/**
- * Cleans up the pedigree file
- */
-void clean_p(std::string &filename) {
-  remove(filename.c_str());
-}
-
-
+// Parents and child
 BOOST_AUTO_TEST_CASE(Test_Trio)
 {
-  // Build a single trio
-  dng::sim::Factory *sb = dng::sim::Factory::newInstance();
-  dng::sim::Member *child = sb->AddTrio(nullptr, dng::sim::Gender::Male, nullptr, nullptr);
- 
-  // Create a pedigree file and pass it into dng::io::Pedigree
-  // TODO: Find a way to pass in the output stream directly instead of writing to a file?
-  std::string file_name = create_p(sb);
-  dng::io::Pedigree ped;
-  std::ifstream ped_file(file_name);
-  ped.Parse(istreambuf_range(ped_file));
-
-  // Pedigree should have 3 members plus the extra 0 root
-  const dng::io::Pedigree::MemberTable family = ped.table();
-  BOOST_CHECK(family.size() == (3+1));
-  
-  confirm(child, ped); // Check child
-  confirm(child->mom, ped); // Check dad
-  confirm(child->dad, ped); // Check mom
-  
-  clean_p(file_name);
+  dng::sim::Trio trio;
+  run_test(trio);
 }
 
-
-BOOST_AUTO_TEST_CASE(Test_Tree)
+// Parents, child and grandparents
+BOOST_AUTO_TEST_CASE(Test_FamilyTree)
 {
-  
-  // Build an extend family; child, parents, and all grandparents
-  dng::sim::Factory *sb = dng::sim::Factory::newInstance();
-  dng::sim::Member *child = sb->AddTrio(nullptr, dng::sim::Gender::Male, nullptr, nullptr);
-  sb->AddTrio(child->mom, nullptr, nullptr); // materal grandparents
-  sb->AddTrio(child->dad, nullptr, nullptr); // paternal grandparents
-
-  std::string file_name = create_p(sb);
-  dng::io::Pedigree ped;
-  std::ifstream ped_file(file_name);
-  ped.Parse(istreambuf_range(ped_file));
-
-  const dng::io::Pedigree::MemberTable family = ped.table();
-  BOOST_CHECK(family.size() == (7+1));
-
-  confirm(child, ped); // child
-  confirm(child->mom, ped); // mom
-  confirm(child->dad, ped); // dad
-
-  // Grandparents
-  confirm(child->mom->mom, ped); 
-  confirm(child->mom->dad, ped); 
-  confirm(child->dad->mom, ped); 
-  confirm(child->dad->dad, ped); 
-
-  clean_p(file_name);
+  dng::sim::FamilyTree ft;
+  run_test(ft);
 }
 
 
-BOOST_AUTO_TEST_CASE(Test_Branched_Ped)
+// Parents, two child, and the female child has a daughter
+BOOST_AUTO_TEST_CASE(Test_ExtendedFamily)
 {
-  // Dad has two children with two mothers. The other mother's grandparents are not in pedigree
-  dng::sim::Factory *sb = dng::sim::Factory::newInstance();
-  dng::sim::Member *child1 = sb->AddTrio(nullptr, dng::sim::Gender::Male, nullptr, nullptr);
-  sb->AddTrio(child1->mom, nullptr, nullptr); // materal grandparents
-  sb->AddTrio(child1->dad, nullptr, nullptr); // paternal grandparents
-  dng::sim::Member *child2 = sb->AddTrio(nullptr, dng::sim::Gender::Female, nullptr, child1->dad);
-
-  std::string file_name = create_p(sb);
-  dng::io::Pedigree ped;
-  std::ifstream ped_file(file_name);
-  ped.Parse(istreambuf_range(ped_file));
-
-  const dng::io::Pedigree::MemberTable family = ped.table();
-  BOOST_CHECK(family.size() == (9+1));
-
-  confirm(child1, ped); // child
-  confirm(child1->mom, ped); // mom
-  confirm(child1->dad, ped); // dad
-  confirm(child1->mom->mom, ped); 
-  confirm(child1->mom->dad, ped); 
-  confirm(child1->dad->mom, ped); 
-  confirm(child1->dad->dad, ped); 
-
-  confirm(child2, ped);
-  confirm(child2->dad, ped);
-  confirm(child2->mom, ped);
-
-  clean_p(file_name);
+  dng::sim::ExtendedTree et;
+  run_test(et);
 }
 
-BOOST_AUTO_TEST_CASE(Test_Multiple_Family)
-{
-  // At the moment ped.h does not handle multiple families in the same pedigree
-}

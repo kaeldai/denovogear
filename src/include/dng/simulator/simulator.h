@@ -49,11 +49,39 @@ std::array<std::pair<Base, Base>, 16> genotypes = {{{A, A}, {A, C}, {A, G}, {A, 
 class SimBuilder {
 
 public:
-	Member *AddTrio(Member *child, Member *mom, Member *dad) {
-		return AddTrio(child, (child == nullptr ? Gender::Unknown : child->sex), mom, dad);
+
+  /*
+  int AddTrio1(const std::string &child, const std::string &mom, const std::string &dad, const std::string &family = "F001") {
+
+
+
+    
+    std::cout << ">>>> " << child << std::endl;
+    std::map<std::string, std::shared_ptr<Member>>::const_iterator it = mmms.find(child);
+    if(it == mmms.end()) {
+      std::cout << "isn't in list yet" << std::endl;
+      //std::shared_ptr<Member> m = std::make_shared<Member>(1, 2, Gender::Female);
+      std::shared_ptr<Member> m(new Member(1,2,Gender::Female));
+      mmms.insert({child, m});
+      m.get()->mom1 = m;
+    }
+    else
+      std::cout << "found" << std::endl;
+    
+    //mmms.insert({child, std::make_shared<Member>(1, 2, 1)});
+    //std::shared_ptr
+    
+  }
+  */
+
+  std::map<std::string, std::shared_ptr<Member>> mmms;
+  
+  
+        Member *AddTrio(Member *child, Member *mom, Member *dad) {
+	        return AddTrio(child, (child == nullptr ? Gender::Unknown : child->sex), mom, dad);
 	}
 
-
+  
 	Member *AddTrio(Member *child, Gender sex, Member *mom, Member *dad) {
 		// Make sure the trio includes a child
 		if(!IS_EMPTY(child) && IS_UNKNOWN(child)) {
@@ -106,9 +134,34 @@ public:
 		return child;
 	}
 
+	void SetDefaultLibraries() {
+	  for(Member *m : members) {
+	    m->add_library(m->name, 10);
+	  }
+	}
+
+	void SetDefaultLibraries(const std::string &libid) {
+	  for(Member *m : members) {
+	    m->add_library(libid, 10);
+	    //m->add_library(libid, 10);
+	    
+	    
+	  }  
+	}
+	
+	void AddLibrary(const std::string &memberid, const std::string &libid, size_t depth = 10) {
+	  
+	}
+	
+	/*
 	void AddLibrary(Member *m, std::string &libname, size_t depth) {
+	  
 
+	}
+	*/
 
+	std::vector<std::string> getLibraries(Member *m) {
+	  
 	}
 
 	virtual void setParameter(std::string &name, int val) {
@@ -183,6 +236,10 @@ public:
 				}
 			}
 		}
+	}
+
+	std::vector<Member*>& getMembers() {
+	  return members;
 	}
 
 	virtual void setReference(std::string &seqence, std::string &chrom, size_t start_pos) {
@@ -306,6 +363,8 @@ protected:
 	size_t mid_list = 1;
 	size_t fid_list = 1;
 
+	std::map<std::string, Member> pedigree_mems;
+	
 	std::vector<Member*> members; // List of all members in the pedigree
 	std::unordered_map<family_id, std::vector<Member*>> family_index; // Keep track of which families contain which members
 

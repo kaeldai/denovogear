@@ -2,7 +2,7 @@
 
 #include <boost/test/unit_test.hpp>
 
-#include "dng/simulator/data_factory.h"
+#include "dng/simulator/models.h"
 #include "dng/read_group.h"
 #include "dng/hts/bcf.h"
 #include "dng/hts/bam.h"
@@ -13,129 +13,113 @@
 #include <string>
 #include <fstream>
 
-using namespace dng;
+// Helper function for test cases that use VCF header as input
+void testVCF(dng::sim::SimBuilder &model) {
 
-#define GROUP_STR(m) (boost::format("%s:LB-%s") % (m)->name % (m)->family_name()).str()
-#define LIBRARY_STR(m) (boost::format("%s\tLB-%s") % (m)->name % (m)->family_name()).str()
-#define SAM_GROUP_STR(m) std::to_string((m)->mid)
-#define SAM_LIBRARY_STR(m) ((m)->name + "\t" + (m)->name + "-" + (m)->family_name())
-
-std::string filename() {
-  char fname[] = "pedigree_XXXXXX";
+  // Create temporary VCF file
+  char fname[] = "vcf_XXXXXX";
   int fd = mkstemp(fname);
-  assert(fd != -1);
-  return std::string(fname);
-}
+  std::string vcffile = std::string(fname);
+  model.publishData(vcffile, dng::sim::SeqFormat::VCF);
 
-BOOST_AUTO_TEST_CASE(Test_VCF)
-{
-  sim::Factory *fac = sim::Factory::newInstance(sim::VCF);
-  sim::Member *child = fac->AddTrio(nullptr, sim::Gender::Female, nullptr, nullptr);
-  std::string file = filename();
-  fac->publishVCFData(file);
-
-  //vector<hts::File> indata;
-  //vector<hts::bcf::File> bcfdata;
-  //bcf.emplace_back(file, "r");
-
-
-  ReadGroups rgs;
-  hts::bcf::File vcf(file.c_str(), "r");
+  // Parse in VCF file to ReadGroups
+  dng::ReadGroups rgs;
+  hts::bcf::File vcf(vcffile.c_str(), "r");
   rgs.ParseSamples(vcf);
 
-  ReadGroups::StrSet groups = rgs.groups();
-  BOOST_CHECK(groups.size() == 3);
-  BOOST_CHECK(groups.find(GROUP_STR(child)) != groups.end());
-  BOOST_CHECK(groups.find(GROUP_STR(child->mom)) != groups.end());
-  BOOST_CHECK(groups.find(GROUP_STR(child->dad)) != groups.end());
-
-  ReadGroups::StrSet libs = rgs.libraries();
-  BOOST_CHECK(libs.size() == 3);
-  BOOST_CHECK(libs.find(LIBRARY_STR(child)) != libs.end());
-  BOOST_CHECK(libs.find(LIBRARY_STR(child->mom)) != libs.end());
-  BOOST_CHECK(libs.find(LIBRARY_STR(child->dad)) != libs.end());
-
-  ReadGroups::StrSet sm = rgs.samples();
-  BOOST_CHECK(sm.size() == 3);
-  BOOST_CHECK(sm.find(child->name) != sm.end());
-  BOOST_CHECK(sm.find(child->mom->name) != sm.end());
-  BOOST_CHECK(sm.find(child->dad->name) != sm.end());
-
-
-  /*
-  for(std::string str : rgs.groups()) {
-    std::cout << str << std::endl;
+  // Compare simulated data members/libraries to what was parsed by ReadGroups.
+  size_t lib_count = 0;
+  for(dng::sim::Member *m : model.getMembers()) {
+    for(dng::sim::Sample lib : m->libraries) {
+      lib_count++;
+      dng::detail::DataBase::index<dng::rg::id>::type::iterator db = rgs.data().get<dng::rg::id>().find(lib.id_vcf());
+      BOOST_CHECK(db != rgs.data().get<dng::rg::id>().end());
+      BOOST_CHECK(db->sample == lib.sm);
+      BOOST_CHECK(db->library == lib.id_vcf()); // ParseSamples uses the "id" for "lb" tag in VCF files.
+    }
   }
-  
-  for(std::string str : rgs.libraries()) {
-    std::cout << str << std::endl;
 
-  }
-  for(std::string str : rgs.samples()) {
-    std::cout << str << std::endl;
-  }
-  */
+  BOOST_CHECK(rgs.samples().size() == model.getMembers().size());
+  BOOST_CHECK(rgs.groups().size() == lib_count);
+  BOOST_CHECK(rgs.libraries().size() == lib_count);
 
-  //remove(file.c_str());
+  // Remove temp vcf file
+  remove(vcffile.c_str());
 }
 
-BOOST_AUTO_TEST_CASE(Test_BCF)
+// Helper function for SAM/BAM input headers
+void testSAM(dng::sim::SimBuilder &model)
 {
 
+  // Create temporary file
+  char fname[] = "sam_XXXXXX";
+  int fd = mkstemp(fname);
+  std::string samfile = std::string(fname);
+  model.publishData(samfile, dng::sim::SeqFormat::SAM);
 
-}
-
-BOOST_AUTO_TEST_CASE(Test_SAM)
-{
-  sim::Factory *fac = sim::Factory::newInstance(sim::SAM);
-  sim::Member *child = fac->AddTrio(nullptr, sim::Gender::Female, nullptr, nullptr);
-  std::string file = filename();
-  fac->publishSAMData(file);
-
+  // Parse SAM file into ReadGroups
+  dng::ReadGroups rgs;
   std::vector<hts::bam::File> bamdata;
-  bamdata.emplace_back(file.c_str(), "r");
-  ReadGroups rgs;
+  bamdata.emplace_back(samfile.c_str(), "r");
   rgs.ParseHeaderText(bamdata);
 
-  ReadGroups::StrSet groups = rgs.groups();
-  BOOST_CHECK(groups.size() == 3);
-  BOOST_CHECK(groups.find(SAM_GROUP_STR(child)) != groups.end());
-  BOOST_CHECK(groups.find(SAM_GROUP_STR(child->mom)) != groups.end());
-  BOOST_CHECK(groups.find(SAM_GROUP_STR(child->dad)) != groups.end());
-
-  ReadGroups::StrSet libs = rgs.libraries();
-  BOOST_CHECK(libs.size() == 3);
-  BOOST_CHECK(libs.find(SAM_LIBRARY_STR(child)) != libs.end());
-  BOOST_CHECK(libs.find(SAM_LIBRARY_STR(child->mom)) != libs.end());
-  BOOST_CHECK(libs.find(SAM_LIBRARY_STR(child->dad)) != libs.end());
-
-  ReadGroups::StrSet sm = rgs.samples();
-  BOOST_CHECK(sm.size() == 3);
-  BOOST_CHECK(sm.find(child->name) != sm.end());
-  BOOST_CHECK(sm.find(child->mom->name) != sm.end());
-  BOOST_CHECK(sm.find(child->dad->name) != sm.end());
-
-  /*
-
-  for(std::string str : rgs.groups()) {
-    std::cout << str << std::endl;
+  // Check data
+  size_t lib_count = 0;
+  for(dng::sim::Member *m : model.getMembers()) {
+    for(dng::sim::Sample lib : m->libraries) {
+      lib_count++;
+      
+      dng::detail::DataBase::index<dng::rg::id>::type::iterator db = rgs.data().get<dng::rg::id>().find(lib.id_sam());
+      BOOST_CHECK(db != rgs.data().get<dng::rg::id>().end());
+      BOOST_CHECK(db->sample == lib.sm);
+      BOOST_CHECK(db->library == lib.id_sam());//lib.sm + "-" + lib.lb);
+    }
   }
-  
-  for(std::string str : rgs.libraries()) {
-    std::cout << str << std::endl;
 
-  }
-  for(std::string str : rgs.samples()) {
-    std::cout << str << std::endl;
-  }
-  */
+  BOOST_CHECK(rgs.samples().size() == model.getMembers().size());
+  BOOST_CHECK(rgs.groups().size() == lib_count);
+  BOOST_CHECK(rgs.libraries().size() == lib_count);
 
+  // Delete SAM file 
+  remove(samfile.c_str());
 }
 
-BOOST_AUTO_TEST_CASE(Test_BAM)
+  
+BOOST_AUTO_TEST_CASE(Test_Trio_VCF)
 {
+  dng::sim::Trio trio;
+  testVCF(trio);
+}
+
+BOOST_AUTO_TEST_CASE(Test_Trio_SAM)
+{
+  dng::sim::Trio trio;
+  testSAM(trio);
+}
+
+BOOST_AUTO_TEST_CASE(Test_FamilyTree_VCF)
+{
+  dng::sim::FamilyTree ft;
+  testVCF(ft);
+}
+
+BOOST_AUTO_TEST_CASE(Test_FamilyTree_SAM)
+{
+  dng::sim::FamilyTree ft;
+  testSAM(ft);
+}
 
 
+BOOST_AUTO_TEST_CASE(Test_ExtendedFamily_VCF)
+{
+  dng::sim::ExtendedTree et;
+  testVCF(et);
+}
+
+BOOST_AUTO_TEST_CASE(Test_ExtendedFamily_SAM)
+{
+  dng::sim::ExtendedTree et;
+  testSAM(et);
 }
 
 

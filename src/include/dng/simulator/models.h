@@ -21,6 +21,8 @@
 #define DNG_SIM_MODELS_H_
 
 #include "dng/simulator/simulator.h"
+#include "dng/simulator/bam.h"
+#include "dng/hts/bcf.h"
 #include <iostream>
 #include <vector>
 #include <array>
@@ -85,11 +87,11 @@ public:
 		int id = 0;
 		for(Member *member : mems) {
 			for(Sample &lib : member->libraries) {
-				std::string id = member->name + "-" + lib.name;
+			  //std::string id = member->name + "-" + lib.name;
 				hdr_txt << "@RG" << "\t"
-				        << "ID:" << id << "\t"
-				        << "LB:" << lib.name << "\t"
-				        << "SM:" << member->name << std::endl;
+				        << "ID:" << lib.id_sam() << "\t"
+				        << "LB:" << lib.lb << "\t"
+				        << "SM:" << lib.sm << std::endl;
 			}
 		}
 
@@ -133,7 +135,7 @@ public:
 						std::string qual = "*";
 						rec.set_qual(qual);
 
-						std::string aux = std::to_string(member->mid) + "-" + member->libraries[l].name;
+						std::string aux = std::to_string(member->mid) + "-" + member->libraries[l].id_sam();
 						char sm[2] = {'S', 'M'};
 						rec.add_aux(sm, 'Z', aux);
 
@@ -167,7 +169,7 @@ public:
 			}
 
 			for(int l = 0; l < mem->libraries.size(); l++) {
-				out.AddSample(mem->libraries[l].name.c_str());
+			  out.AddSample(mem->libraries[l].id_vcf().c_str());
 				n_libs++;
 			}
 		}
@@ -633,42 +635,132 @@ protected:
 	std::array<double, 4> pop_priors_;
 };
 
-/**
- * Used for unit testing
- */
-class Test1 : public SimBuilder {
-public:
-
-	void createSeqData() {
-
-	}
+ 
+class TestCases : public SimBuilder { 
+	void createSeqData() {	}
 
 	void publishDataSAM(const char *file, const char *mode, std::vector<Member*> &members) {
+	  	std::stringstream hdr_txt;
+		hdr_txt << "@HD\tVN:0.1\tSO:unknown\tGO:none" << std::endl;
+		hdr_txt << "@SQ\tSN:1\tLN:249250621" << std::endl;
+		int id = 0;
+		for(Member *member : members) {
+			for(Sample &lib : member->libraries) {
+			  //std::string id = member->name + "-" + lib.name;
+				hdr_txt << "@RG" << "\t"
+				        << "ID:" << lib.id_sam() << "\t"
+				        << "LB:" << lib.lb << "\t"
+				        << "SM:" << lib.sm << std::endl;
+			}
+		}
 
+		dng::sim::BAMFile out(file, mode);
+		out.set_header(hdr_txt.str().c_str(), hdr_txt.str().size());
 	}
-
 
 	void publishDataVCF(const char *file, const char *mode, std::vector<Member*> &members) {
-
+	  hts::bcf::File out(file , mode);
+	  out.AddHeaderMetadata("##fileformat=VCFv4.2");
+	  out.AddHeaderMetadata("##FORMAT=<ID=AD,Number=.,Type=Integer,Description=\"Allelic depths for the ref and alt alleles in the order listed\">");
+	  //uint32_t l_chrom = static_cast<uint32_t>(2*start_pos_ + reference.size()); // Take a guess of the contig full length, should add as parameter?
+	  out.AddContig("1", 100000);
+	  for(int a = 0; a < members.size(); a++) {
+	    Member *mem = members[a];
+	    for(int l = 0; l < mem->libraries.size(); l++) {
+	      //std::cout << ">> " << mem->libraries[l].id;
+	      out.AddSample(mem->libraries[l].id_vcf().c_str());
+	    }	    
+	  }
+	  
+	  out.WriteHeader();
 	}
 
-	void setReference(std::string &seqence, std::string &chrom, size_t start_pos) {
+	void setReference(std::string &seqence, std::string &chrom, size_t start_pos) {	}
 
-	}
+	void setReference(std::string &fasta, std::string &range) {}
+};
 
+ 
+/**
+ * A simple Trio Family
+ *
+ *   NA0001[f]------NA0002[m]
+ *              |
+ *           NA0003[m]
 
-	void setReference(std::string &fasta, std::string &range) {
+ */
+class Trio : public TestCases {
+public:
 
-	}
-
-
-	~Test1() {
-
-	}
-
+  Trio(){
+    Member *child = AddTrio(nullptr, dng::sim::Gender::Male, nullptr, nullptr);
+    SetDefaultLibraries();
+    SetDefaultLibraries("L1");
+    
+    /*
+    AddLibrary("NA001", "NA001");
+    AddLibrary("NA002", "NA002");
+    AddLibrary("NA003", "NA003");
+    */
+    
+    /*
+    std::string libname = "L1";
+    child->add_library(libname, 10);
+    libname = "L2";
+    child->add_library(libname, 15);
+    */
+  }
 };
 
 
+/** 
+ * An immediete family tree with all grandparents
+ * NA0004[f]------NA0005[m]  NA0006[f]------NA0007[m]
+ *             |                         |
+ *          NA0001[f]-----------------NA0002[m]
+ *                           |
+ *                        NA0003[m]
+ */
+class FamilyTree : public TestCases {
+ public:
+  FamilyTree() {
+    Member *child = AddTrio(nullptr, dng::sim::Gender::Male, nullptr, nullptr);
+    AddTrio(child->mom, nullptr, nullptr);
+    AddTrio(child->dad, nullptr, nullptr);
+    SetDefaultLibraries("L1");
+    SetDefaultLibraries("L2");
+    //AddTrio1("NA001");
+    //AddTrio1("NA002");
+  }
+};
+
+
+/**
+ * A family tree extend by marriage
+ *
+ *   NA0001[f]------NA0002[m]
+ *              |
+ *       |------------|
+ *    NA0004[m]    NA0003[f]-------NA0005[m]
+ *                            |
+ *                         NA0006[f]
+ */ 
+class ExtendedTree : public TestCases {
+public:
+  ExtendedTree() {
+    Member *child = AddTrio(nullptr, dng::sim::Gender::Female, nullptr, nullptr);
+    AddTrio(nullptr, dng::sim::Gender::Male, child->mom, child->dad);
+    AddTrio(nullptr, dng::sim::Gender::Female, child, nullptr);
+    SetDefaultLibraries("somatic");
+    AddLibrary("NA003", "gametic");
+    AddLibrary("NA005", "gametic");
+    AddLibrary("NA006", "gametic");
+    AddLibrary("NA006", "lib2");
+  }
+};
+
+ 
+ 
 } // namespace sim
 } // namespace dng
 

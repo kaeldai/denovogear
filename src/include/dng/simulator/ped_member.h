@@ -25,6 +25,7 @@
 #include <vector>
 #include <boost/format.hpp>
 #include <unordered_map>
+#include "dng/io/ped.h"
 
 #define ID_UNKNOWN -1
 #define IS_UNKNOWN(mem) ((mem)->mid == ID_UNKNOWN)
@@ -54,10 +55,15 @@ typedef std::unordered_map<size_t, Base> reference_map;
  * Stores information about a sample/library. Including
  */
 struct Sample {
-	std::string name; // library name
+  //std::string id;
+  std::string lb;
+  std::string sm;
+  
+  //std::string name; // library name
 	size_t depth; // number of reeds per site.
 	reference_map dna[2]; // list of somatic mutation diffs between the reference and sample
 
+  
 	Base get_nt(int chrom, size_t site) {
 		reference_map &rmap = dna[chrom];
 		reference_map::const_iterator nt = rmap.find(site);
@@ -68,6 +74,20 @@ struct Sample {
 			return nt->second;
 		}
 	}
+
+  std::string id_vcf() {
+    if(lb == sm)
+      return lb;
+    else
+      return sm + ":" + lb;
+  }
+
+  std::string id_sam() {
+    if(lb == sm)
+      return lb;
+    else 
+      return sm + "-" + lb;
+  }
 };
 
 struct Member {
@@ -78,7 +98,9 @@ struct Member {
 	Member *mom;
 	Member *dad;
 	bool hasDNA; // Used when generating the pedigree contigs
-
+  
+  //std::shared_ptr<Member> mom1;
+  
 	// Used to keep track of differences between member's DNA and the reference. We need one for each chromatid and somatic vs gametic
 	reference_map gametes[2];
 	std::vector<Sample> libraries;
@@ -148,11 +170,21 @@ struct Member {
 		}
 	}
 
-	void add_library(std::string &name, size_t depth) {
+	void add_library(const std::string &lb, size_t depth) {
 		// TODO: Check that library with same name doesn't already exists
 
 		Sample lib;
-		lib.name = std::string(name);
+		/*
+		if(lb != name) {
+		  lib.id = name + "-" + lb;
+		}
+		else {
+		  lib.id = name; 
+		}
+		*/
+		lib.lb = lb;
+		lib.sm = name;
+		//lib.name = std::string(name);
 		lib.depth = depth;
 		lib.dna[0] = gametes[0];
 		lib.dna[1] = gametes[1];
