@@ -79,198 +79,7 @@ public:
 	}
 
 
-	void publishDataSAM(const char *file, const char *mode, std::vector<Member*> &mems) {
-		// Build the bam header file from scratch
-		std::stringstream hdr_txt;
-		hdr_txt << "@HD\tVN:0.1\tSO:unknown\tGO:none" << std::endl;
-		hdr_txt << "@SQ\tSN:1\tLN:249250621" << std::endl;
-		int id = 0;
-		for(Member *member : mems) {
-			for(Sample &lib : member->libraries) {
-			  //std::string id = member->name + "-" + lib.name;
-				hdr_txt << "@RG" << "\t"
-				        << "ID:" << lib.id_sam() << "\t"
-				        << "LB:" << lib.lb << "\t"
-				        << "SM:" << lib.sm << std::endl;
-			}
-		}
-
-		dng::sim::BAMFile out(file, mode);
-		out.set_header(hdr_txt.str().c_str(), hdr_txt.str().size());
-
-
-		size_t contig_len_ = 30;
-		for(Member *member : mems) {
-			for(int l = 0; l < member->libraries.size(); l++) {
-				Sample &library = member->libraries[l];
-
-				for(int pos = 0; pos < reference.size(); pos += contig_len_) {
-					size_t l_ccontig = (pos + contig_len_ < reference.size() ? contig_len_ : reference.size() - pos);
-					//std::cout << "l_ccontig = " << l_ccontig << std::endl;
-
-					// TODO: Figure out a better data structure for storing the results. Row base look-ups are not efficient.
-					std::vector<std::vector<Base>> reads;
-					for(int next = 0; next < l_ccontig; next++) {
-						reads.push_back(baseCall(library, next+pos));
-					}
-
-					//std::cout << "HERE" << std::endl;
-
-					//std::cout << "library depth = " << library.depth << std::endl;
-					for(int d = 0; d < library.depth; d++) {
-						//std::cout << "init_rec()" << std::endl;
-						dng::sim::BAMRec rec = out.init_rec();
-						rec.set_qname(chrom_);
-
-						//std::cout << "Adding cigar " << std::endl;
-						rec.add_cigar(BAM_CMATCH, l_ccontig);
-
-						std::string seq;
-						for(int site = 0; site < l_ccontig; site++) {
-							seq += nt2char[reads[site][d]];
-						}
-
-						rec.set_seq(seq);
-
-						std::string qual = "*";
-						rec.set_qual(qual);
-
-						std::string aux = std::to_string(member->mid) + "-" + member->libraries[l].id_sam();
-						char sm[2] = {'S', 'M'};
-						rec.add_aux(sm, 'Z', aux);
-
-						out.write_record(rec);
-					}
-				}
-			}
-		}
-		out.save();
-	}
-
-
-	void publishDataVCF(const char *file, const char *mode, std::vector<Member*> &mem_subset) {
-
-
-		// Build the VCF/BCF header
-		hts::bcf::File out(file , mode);
-		out.AddHeaderMetadata("##fileformat=VCFv4.2");
-		out.AddHeaderMetadata("##FORMAT=<ID=AD,Number=.,Type=Integer,Description=\"Allelic depths for the ref and alt alleles in the order listed\">");
-		uint32_t l_chrom = static_cast<uint32_t>(2*start_pos_ + reference.size()); // Take a guess of the contig full length, should add as parameter?
-		out.AddContig(chrom_.c_str(), l_chrom);
-
-		// Add a format column for each library
-		size_t n_libs = 0;
-		for(int a = 0; a < mem_subset.size(); a++) {
-			Member *mem = mem_subset[a];
-			if(mem->libraries.size() == 0) {
-				// If the user hasn't created a specific library for member then add a default one
-				std::string sample = (boost::format("LB%s:%s") % mem->name % mem->get_family_name()).str();
-				mem->add_library(sample, default_depth_);
-			}
-
-			for(int l = 0; l < mem->libraries.size(); l++) {
-			  out.AddSample(mem->libraries[l].id_vcf().c_str());
-				n_libs++;
-			}
-		}
-		out.WriteHeader();
-
-
-		// Go through each position in the reference and build a line in the VCF file
-		size_t l_reference = reference.size();
-		for(size_t pos  = 0; pos < l_reference; pos++) {
-			Base ref = reference[pos];
-
-
-			int gt_totals[4] = {0, 0, 0, 0}; // total num of A,C,G,Ts across all the libraries
-			int total_reads = 0;
-			std::vector<uint32_t> gtcounts;//(n_libs*4); // individual A,C,G, and T counts for each library
-			for(size_t m = 0; m < mem_subset.size(); m++) {
-				Member *mem = mem_subset[m];
-				for(size_t l = 0; l < mem->libraries.size(); l++) {
-					std::vector<Base> reads = baseCall(mem->libraries[l], pos);
-					int gt_tmp[4] = {0, 0, 0, 0};
-					for(int r : reads) {
-						gt_tmp[r]++;
-						gt_totals[r]++;
-					}
-					gtcounts.push_back(gt_tmp[0]);
-					gtcounts.push_back(gt_tmp[1]);
-					gtcounts.push_back(gt_tmp[2]);
-					gtcounts.push_back(gt_tmp[3]);
-				}
-			}
-
-
-			// allele order should start with the ref, and include only those nucleotides which have a read
-			std::vector<int> allele_order_map;
-			allele_order_map.push_back(ref);
-			for(int a = 1; a < 4; a++) {
-				int index = (ref + a)%4;
-				if(gt_totals[index] > 0) {
-					//std::cout << "HERE at site " << pos << std::endl;
-					allele_order_map.push_back(index);
-				}
-			}
-			if(allele_order_map.size() == 1)
-				continue;
-
-			hts::bcf::Variant rec = out.InitVariant();
-			rec.target(chrom_.c_str());
-			rec.position(pos);
-
-			std::string allele_order_str;
-			allele_order_str = Index2Allele(ref);
-			for(int indx = 1; indx < allele_order_map.size(); indx++) {
-				allele_order_str += std::string(",") + Index2Allele(allele_order_map[indx]);
-			}
-			rec.alleles(allele_order_str);
-
-
-			/*
-			std::vector<int32_t> allele_depths;
-			for(int m_indx = 0; m_indx < mem_subset.size(); m_indx++) {
-				Member *mem = mem_subset[m];
-				for(size_t l = 0; l < mem->libraries.size(); l++) {
-					for(int a : allele_order_map) {
-						int ad_indx = m_indx*4 + a;//allele_order_map[a];
-						allele_depths.push_back(gtcounts[ad_indx]);
-					}
-				}
-			}
-			*/
-
-			std::vector<int32_t> allele_depths;
-			for(int lindx = 0; lindx+3 < gtcounts.size(); lindx += 4) {
-				for(int a : allele_order_map) {
-					int gt_loc = lindx + a;
-					allele_depths.push_back(gtcounts[gt_loc]);
-				}
-			}
-
-			/*
-			//std::cout << allele_order_str << std::endl;
-			std::cout << pos << ": [";
-			for(int a = 0; a < gtcounts.size(); a++) {
-				std::cout << gtcounts[a];
-				if(a%4 == 3) {
-					std::cout << "]";
-					if(a+1 < gtcounts.size())
-						std::cout << "[";
-				}
-				else {
-					std::cout << ", ";
-				}
-			}
-			std::cout << std::endl;
-			*/
-
-			rec.samples("AD", allele_depths);
-			out.WriteRecord(rec);
-		}
-	}
-
-	std::vector<Base> baseCall(Sample &lib, size_t site) {
+	std::vector<Base> baseCall(Library &lib, size_t site) {
 		std::array<int, 5> interval = {0, 1, 2, 3, 4};
 		Base ref = reference[site];
 		Base genotype[2] = {lib.get_nt(0, site), lib.get_nt(1, site)};
@@ -310,15 +119,6 @@ public:
 
 		return reads;
 	}
-
-
-	/*
-	void readSeq(Sample &lib) {
-
-
-	}
-	*/
-
 
 	void createSeqData() {
 		createPriorsDist();
@@ -366,10 +166,10 @@ protected:
 
 	void createPriorsDist() {
 		genotype_dist ref_weights[] = { genotype_weights(theta_, nuc_freqs_, {ref_weight_, 0, 0, 0}),
-										genotype_weights(theta_, nuc_freqs_, {0, ref_weight_, 0, 0}),
-										genotype_weights(theta_, nuc_freqs_, {0, 0, ref_weight_, 0}),
-										genotype_weights(theta_, nuc_freqs_, {0, 0, 0, ref_weight_}),
-										genotype_weights(theta_, nuc_freqs_, {0, 0, 0, 0})};
+						genotype_weights(theta_, nuc_freqs_, {0, ref_weight_, 0, 0}),
+						genotype_weights(theta_, nuc_freqs_, {0, 0, ref_weight_, 0}),
+						genotype_weights(theta_, nuc_freqs_, {0, 0, 0, ref_weight_}),
+						genotype_weights(theta_, nuc_freqs_, {0, 0, 0, 0})};
 		double interval[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
 
 		pop_priors_dists.emplace_back(std::begin(interval), std::end(interval), ref_weights[0].begin());
@@ -432,52 +232,53 @@ protected:
 	* Iterate through all the members of the pedigree creating DNA based on the reference and parential DNA.
 	*/
 	void initGameteDNA() {
-		// loop through all the members, since we don't assume anything about the order of the pedigree list we have to
-		// make mulitple loops through; first initializing the pedigree founders, then the founders' children, and then
-		// their children, etc.
-		size_t remaining = members.size();
-		while(remaining > 0) {
-			for(Member *m : members) {
-				if(m->hasDNA) {
-					// Member already has gametic DNA, skip
-					continue;
-				}
-				else if(m->mom == NULL && m->dad == NULL) {
-					// Member is a pedigree founder - does not have parents
-					createFounderDNA(m);
-					m->hasDNA = true;
-					remaining--;
-				}
-				else if(!(m->mom == NULL) != !(m->dad == NULL)) {
-					// Special case where member has only one parent in pedigree and another is missing. Need to wait to parent has
-					// DNA filled.
-					if(m->mom != NULL && m->mom->hasDNA) {
-						createChildDNA(m, m->mom);
-						m->hasDNA = true;
-						remaining--;
-					}
-					else if(m->dad != NULL && m->dad->hasDNA) {
-						createChildDNA(m, m->dad);
-						m->hasDNA = true;
-						remaining--;
-					}
-					else {
-						continue;
-					}
-				}
-				else {
-					// A child with both parents in pedigree. Wait until parents have their DNA before initializing.
-					if(m->mom->hasDNA && m->dad->hasDNA) {
-						createChildDNA(m, m->mom, m->dad);
-						m->hasDNA = true;
-						remaining--;
-					}
-				}
-			}
+	  // loop through all the members, since we don't assume anything about the order of the pedigree list we have to
+	  // make mulitple loops through; first initializing the pedigree founders, then the founders' children, and then
+	  // their children, etc.
+	  std::vector<std::shared_ptr<Member>> members = GetPedigree();
+	  size_t remaining = members.size();
+	  while(remaining > 0) {
+	    for(std::shared_ptr<Member> m : members) {
+	      if(m->hasDNA) {
+		// Member already has gametic DNA, skip
+		continue;
+	      }
+	      else if(m->mom_ptr == NULL && m->dad_ptr == NULL) {
+		// Member is a pedigree founder - does not have parents
+		createFounderDNA(m);
+		m->hasDNA = true;
+		remaining--;
+	      }
+	      else if(!(m->mom_ptr == NULL) != !(m->dad_ptr == NULL)) {
+		// Special case where member has only one parent in pedigree and another is missing. Need to wait to parent has
+		// DNA filled.
+		if(m->mom_ptr != NULL && m->mom_ptr->hasDNA) {
+		  createChildDNA(m, m->mom_ptr);
+		  m->hasDNA = true;
+		  remaining--;
 		}
+		else if(m->dad_ptr != NULL && m->dad_ptr->hasDNA) {
+		  createChildDNA(m, m->dad_ptr);
+		  m->hasDNA = true;
+		  remaining--;
+		}
+		else {
+		  continue;
+		}
+	      }
+	      else {
+		// A child with both parents in pedigree. Wait until parents have their DNA before initializing.
+		if(m->mom_ptr->hasDNA && m->dad_ptr->hasDNA) {
+		  createChildDNA(m, m->mom_ptr, m->dad_ptr);
+		  m->hasDNA = true;
+		  remaining--;
+		}
+	      }
+	    }
+	  }
 	}
 
-	void createFounderDNA(Member *mem) {
+	void createFounderDNA(std::shared_ptr<Member> mem) {
 		// Go through each site in the reference contig and randomly select a genotype based on the reference.
 		for(size_t site = 0; site < reference.size(); site++) {
 			Base ref = reference[site];
@@ -493,19 +294,19 @@ protected:
 		}
 	}
 
-	void createChildDNA(Member *child, Member *parent) {
-		// Temporarly create a parent
-		Member *tmp_parent = new Member(-1, -1, Gender::Unknown);
-		createFounderDNA(tmp_parent);
+	void createChildDNA(member_ptr child, member_ptr parent) {
+	  // Temporarly create a parent
+	  std::shared_ptr<Member> tmp_parent = std::make_shared<Member>(nullptr, nullptr, Gender::Unknown);
+	  createFounderDNA(tmp_parent);
 
-		// update child
-		createChildDNA(child, tmp_parent, parent);
+	  // update child
+	  createChildDNA(child, tmp_parent, parent);
 
-		// delete parent
-		delete tmp_parent;
+	  // delete parent
+	  //delete tmp_parent;
 	}
 
-	void createChildDNA(Member *child, Member *mom, Member *dad) {
+	void createChildDNA(member_ptr child, member_ptr mom, member_ptr dad) {
 		if(child == NULL || mom == NULL || dad == NULL)
 			return;
 
@@ -556,11 +357,11 @@ protected:
 		size_t site = rand() / l_reference; // select a random place along contig to start
 
 		// Go through each member's libraries and create unique somatic cell mutations for each library.
-		for(Member *m : members) {
-
+		for(member_ptr m : GetPedigree()) {
+		
 			// If user hasn't specified any libraries create a default one
 			if(m->libraries.size() == 0) {
-				std::string libname = std::string(m->name) + "-" + m->get_family_name();
+			  std::string libname = "DO SOMETHING HERE";//std::string(m->name) + "-" + m->get_family_name();
 				m->add_library(libname, default_depth_);
 			}
 
@@ -584,6 +385,7 @@ protected:
 						}
 					}
 				}
+			
 			}
 		}
 	}
@@ -613,68 +415,19 @@ protected:
 
 	double default_depth_ = 10; // Should be set uniquly for each library.
 
-
+	std::array<double, 4> pop_priors_;
 	std::vector<std::piecewise_constant_distribution<>> pop_priors_dists;
 	std::array<std::array<std::array<double, 5>, 4>, 4> read_err_weights;
 
-	double transitons_mut_ = 0.015;
-	double transversion_mut_ = 0.005;
-	double somatic_mutation_rate_ = 0.01;
-	double homozygote_match_ = 0.98;
-	double heterozygote_match_ = 0.99;
-
 	std::mt19937 ran_generator;
-
-	//Base transversions[4][2] = {{C, T}, {C, T}, {A, G}, {A, G}};
-	//Base transitions[4] = {G, A, T, C};
-	//int depth = 10;
-
-
-
-
-	std::array<double, 4> pop_priors_;
 };
 
  
 class TestCases : public SimBuilder { 
 	void createSeqData() {	}
 
-	void publishDataSAM(const char *file, const char *mode, std::vector<Member*> &members) {
-	  	std::stringstream hdr_txt;
-		hdr_txt << "@HD\tVN:0.1\tSO:unknown\tGO:none" << std::endl;
-		hdr_txt << "@SQ\tSN:1\tLN:249250621" << std::endl;
-		int id = 0;
-		for(Member *member : members) {
-			for(Sample &lib : member->libraries) {
-			  //std::string id = member->name + "-" + lib.name;
-				hdr_txt << "@RG" << "\t"
-				        << "ID:" << lib.id_sam() << "\t"
-				        << "LB:" << lib.lb << "\t"
-				        << "SM:" << lib.sm << std::endl;
-			}
-		}
-
-		dng::sim::BAMFile out(file, mode);
-		out.set_header(hdr_txt.str().c_str(), hdr_txt.str().size());
-	}
-
-	void publishDataVCF(const char *file, const char *mode, std::vector<Member*> &members) {
-	  hts::bcf::File out(file , mode);
-	  out.AddHeaderMetadata("##fileformat=VCFv4.2");
-	  out.AddHeaderMetadata("##FORMAT=<ID=AD,Number=.,Type=Integer,Description=\"Allelic depths for the ref and alt alleles in the order listed\">");
-	  //uint32_t l_chrom = static_cast<uint32_t>(2*start_pos_ + reference.size()); // Take a guess of the contig full length, should add as parameter?
-	  out.AddContig("1", 100000);
-	  for(int a = 0; a < members.size(); a++) {
-	    Member *mem = members[a];
-	    for(int l = 0; l < mem->libraries.size(); l++) {
-	      //std::cout << ">> " << mem->libraries[l].id;
-	      out.AddSample(mem->libraries[l].id_vcf().c_str());
-	    }	    
-	  }
-	  
-	  out.WriteHeader();
-	}
-
+	std::vector<Base> baseCall(Library &lib, size_t site) { }
+	
 	void setReference(std::string &seqence, std::string &chrom, size_t start_pos) {	}
 
 	void setReference(std::string &fasta, std::string &range) {}
@@ -684,31 +437,18 @@ class TestCases : public SimBuilder {
 /**
  * A simple Trio Family
  *
- *   NA0001[f]------NA0002[m]
+ *   NA0002[f]------NA0003[m]
  *              |
- *           NA0003[m]
+ *           NA0001[m]
 
  */
 class Trio : public TestCases {
 public:
 
   Trio(){
-    Member *child = AddTrio(nullptr, dng::sim::Gender::Male, nullptr, nullptr);
+    AddTrio("NA001", dng::sim::Gender::Male, "NA002", "NA003");
     SetDefaultLibraries();
     SetDefaultLibraries("L1");
-    
-    /*
-    AddLibrary("NA001", "NA001");
-    AddLibrary("NA002", "NA002");
-    AddLibrary("NA003", "NA003");
-    */
-    
-    /*
-    std::string libname = "L1";
-    child->add_library(libname, 10);
-    libname = "L2";
-    child->add_library(libname, 15);
-    */
   }
 };
 
@@ -717,20 +457,19 @@ public:
  * An immediete family tree with all grandparents
  * NA0004[f]------NA0005[m]  NA0006[f]------NA0007[m]
  *             |                         |
- *          NA0001[f]-----------------NA0002[m]
+ *          NA0002[f]-----------------NA0003[m]
  *                           |
- *                        NA0003[m]
+ *                        NA0001[m]
  */
 class FamilyTree : public TestCases {
  public:
-  FamilyTree() {
-    Member *child = AddTrio(nullptr, dng::sim::Gender::Male, nullptr, nullptr);
-    AddTrio(child->mom, nullptr, nullptr);
-    AddTrio(child->dad, nullptr, nullptr);
+  FamilyTree() {    
+    AddTrio("NA001", dng::sim::Gender::Male, "NA002", "NA003");
+    AddTrio("NA002", "NA004", "NA005");
+    AddTrio("NA003", "NA006", "NA007");
+    
     SetDefaultLibraries("L1");
     SetDefaultLibraries("L2");
-    //AddTrio1("NA001");
-    //AddTrio1("NA002");
   }
 };
 
@@ -748,9 +487,10 @@ class FamilyTree : public TestCases {
 class ExtendedTree : public TestCases {
 public:
   ExtendedTree() {
-    Member *child = AddTrio(nullptr, dng::sim::Gender::Female, nullptr, nullptr);
-    AddTrio(nullptr, dng::sim::Gender::Male, child->mom, child->dad);
-    AddTrio(nullptr, dng::sim::Gender::Female, child, nullptr);
+    AddTrio("NA003", dng::sim::Gender::Female, "NA001", "NA002");
+    AddTrio("NA004", dng::sim::Gender::Male, "NA001", "NA002");
+    AddTrio("NA006", "NA003", "NA005");
+    
     SetDefaultLibraries("somatic");
     AddLibrary("NA003", "gametic");
     AddLibrary("NA005", "gametic");

@@ -30,6 +30,8 @@
 #define ID_UNKNOWN -1
 #define IS_UNKNOWN(mem) ((mem)->mid == ID_UNKNOWN)
 #define IS_EMPTY(mem) (mem == nullptr)
+#define MEMBER_NA ""
+
 
 #define PED_NOPARENT "0"
 
@@ -38,8 +40,8 @@ namespace sim {
 
 
 
-typedef size_t member_id;
-typedef size_t family_id;
+  //typedef size_t member_id;
+//typedef size_t family_id;
 typedef dng::io::Pedigree::Gender Gender;
 
 enum Base : uint8_t { A = 0, C, G, T, N, REF, UNASSIGNED };
@@ -49,162 +51,129 @@ static Base index2Base[] = {A, C, G, T, N};
 
 typedef std::unordered_map<size_t, Base> reference_map;
 
-
+struct Member;
+typedef std::shared_ptr<Member> member_ptr;
+ 
 
 /**
- * Stores information about a sample/library. Including
+ * Stores information about a sample library. Including VCF/SAM header tags, allele depth size, and list of variant locations.
  */
-struct Sample {
-  //std::string id;
-  std::string lb;
-  std::string sm;
+struct Library {
+  std::string lb; // SAM LB tag 
+  std::string sm; // SAM SM tag
+  std::string id; // SAM ID tag
+  std::string sample_name; // VCF genotype header
   
-  //std::string name; // library name
-	size_t depth; // number of reeds per site.
-	reference_map dna[2]; // list of somatic mutation diffs between the reference and sample
+  size_t depth; // number of reeds per site.
+  reference_map dna[2]; // list of somatic mutation diffs between the reference and sample
 
-  
-	Base get_nt(int chrom, size_t site) {
-		reference_map &rmap = dna[chrom];
-		reference_map::const_iterator nt = rmap.find(site);
-		if(nt ==  rmap.end()) {
-			return REF;
-		}
-		else {
-			return nt->second;
-		}
-	}
-
-  std::string id_vcf() {
-    if(lb == sm)
-      return lb;
-    else
-      return sm + ":" + lb;
-  }
-
-  std::string id_sam() {
-    if(lb == sm)
-      return lb;
-    else 
-      return sm + "-" + lb;
+  Base get_nt(int chrom, size_t site) {
+    reference_map &rmap = dna[chrom];
+    reference_map::const_iterator nt = rmap.find(site);
+    if(nt ==  rmap.end()) {
+      return REF;
+    }
+    else {
+      return nt->second;
+    }
   }
 };
 
 struct Member {
-	member_id mid;
-	std::string name; // name that shows up in pedigree and data file
-	family_id fid;
-	Gender sex;
-	Member *mom;
-	Member *dad;
-	bool hasDNA; // Used when generating the pedigree contigs
+  std::string id; // identifier for member of pedigree
+  std::string family_id; // family unit member belongs to (first col in PED file)
+  Gender sex;
+  member_ptr mom_ptr; // reference to member's mom
+  member_ptr dad_ptr; // reference to member's dad
+
+  bool hasDNA; // Used when generating the pedigree contigs
   
-  //std::shared_ptr<Member> mom1;
+  // Used to keep track of differences between member's DNA and the reference. One for each chromatid and somatic vs gametic
+  reference_map gametes[2];
+  std::vector<Library> libraries;
+
+  Member(const std::string &id_, const std::string &fam_id_, Gender sex_) : id(id_), family_id(fam_id_), sex(sex_) {
+    mom_ptr = nullptr;
+    dad_ptr = nullptr;
+    hasDNA = false;
+  }
+
   
-	// Used to keep track of differences between member's DNA and the reference. We need one for each chromatid and somatic vs gametic
-	reference_map gametes[2];
-	std::vector<Sample> libraries;
+  // Change the nucleotide at 'site' for chromosome pair number 'chrom_num' to 'base'.
+  void update_gamete_dna(int chrom_num, size_t site, Base base) {
+    if(chrom_num >= 2)
+      throw std::runtime_error("Attempting to set base from more than diploidy DNA.");
+    
+    gametes[chrom_num].insert({site, base});
+  }
 
-	Member(member_id mid_, family_id fid_, Gender sex_) : mid(mid_), fid(fid_), sex(sex_) {
-		name = (boost::format("NA%04d") % mid).str();
-		mom = nullptr;
-		dad = nullptr;
-		hasDNA = false;
-	}
+  
+  // Makes copies of mom and dad's dna and saves into member. Selection of chromosome pair is random
+  void inherit_dna(member_ptr mom, member_ptr dad) {
+    // randomly select one of each pararents contigs and copy to child
+    int mom_chrom_num = rand() % 2;
+    int dad_chrom_num = rand() % 2;
+    int placement = rand() % 2;
+    
+    gametes[placement] = reference_map(mom->gametes[mom_chrom_num]);
+    gametes[(placement+1)%2] = reference_map(dad->gametes[dad_chrom_num]);
+  }
 
-	std::string get_family_name() {
-		return (boost::format("F%03d") % fid).str();
-	}
+  // Get the nucleotide base at specified site, from either chromatid 0 or 1.
+  Base get_gamete_nt(size_t chromatid, size_t site) {
+    if(chromatid >= 2)
+      throw std::runtime_error("Attempting to get nuclitide from chromatid " + std::to_string(chromatid) + ". Members only defined diploidy DNA.");
+    
+    reference_map &chrom = gametes[chromatid];
+    reference_map::const_iterator nt = chrom.find(site);
+    if(nt == chrom.end()) {
+      return REF;
+    }
+    else {
+      return nt->second;
+    }
+  }
+  
+  void add_library(const std::string &lib_id, size_t depth) {
+    // Check that library with same name doesn't already exists
+    for(Library l : libraries) {
+      if(l.lb == lib_id) {
+	std::cerr << "WARNING. Member " + id + " already has a library with lb tag " + lib_id + ". Skipping!" << std::endl;
+	return;
+      }
+    }
+    
+    Library lib;
+    lib.lb = lib_id;
+    lib.sm = id;
+    if(lib_id == id) {
+      lib.id = id;
+      lib.sample_name = id;
+    }
+    else {
+      lib.id = lib.sm + "-" + lib.lb;
+      lib.sample_name = lib.sm + ":" + lib.lb;
+    }
+    lib.depth = depth;
+    lib.dna[0] = gametes[0];
+    lib.dna[1] = gametes[1];
+    libraries.push_back(lib);
+  }
 
-	std::string get_dad_id() {
-		if(dad == nullptr)
-			return 0;
-		else
-			return dad->name;
-	}
-
-	std::string get_mom_id() {
-		if(mom == nullptr)
-			return std::string("0");
-		else
-			return mom->name;
-	}
-
-	/**
-	* Change the nucleotide at 'site' for chromosome pair number 'chrom_num' to 'base'.
-	*/
-	void update_gamete_dna(int chrom_num, size_t site, Base base) {
-		if(chrom_num >= 2)
-			throw std::runtime_error("Attempting to set base from more than diploidy DNA.");
-
-		gametes[chrom_num].insert({site, base});
-	}
-
-	/**
-	* Makes copies of mom and dad's dna and saves into member. Selection of chromosome pair is random
-	*/
-	void inherit_dna(Member *mom, Member *dad) {
-		// randomly select one of each pararents contigs and copy to child
-		int mom_chrom_num = rand() % 2;
-		int dad_chrom_num = rand() % 2;
-		int placement = rand() % 2;
-
-		gametes[placement] = reference_map(mom->gametes[mom_chrom_num]);
-		gametes[(placement+1)%2] = reference_map(dad->gametes[dad_chrom_num]);
-	}
-
-		/**
-		* Get the nucleotide base at specified site, from either chromatid 0 or 1.
-		*/
-	Base get_gamete_nt(size_t chromatid, size_t site) {
-		if(chromatid >= 2)
-			throw std::runtime_error("Attempting to get nuclitide from chromatid " + std::to_string(chromatid) + ". Members only defined diploidy DNA.");
-
-		reference_map &chrom = gametes[chromatid];
-		reference_map::const_iterator nt = chrom.find(site);
-		if(nt == chrom.end()) {
-			return REF;
-		}
-		else {
-			return nt->second;
-		}
-	}
-
-	void add_library(const std::string &lb, size_t depth) {
-		// TODO: Check that library with same name doesn't already exists
-
-		Sample lib;
-		/*
-		if(lb != name) {
-		  lib.id = name + "-" + lb;
-		}
-		else {
-		  lib.id = name; 
-		}
-		*/
-		lib.lb = lb;
-		lib.sm = name;
-		//lib.name = std::string(name);
-		lib.depth = depth;
-		lib.dna[0] = gametes[0];
-		lib.dna[1] = gametes[1];
-		libraries.push_back(lib);
-	}
-
-	Base get_lib_dna(size_t l_indx, size_t chrom, size_t site) {
-		reference_map &rmap = libraries[l_indx].dna[chrom];
-		reference_map::const_iterator nt = rmap.find(site);
-		if(nt ==  rmap.end()) {
-			return REF;
-		}
-		else {
-			return nt->second;
-		}
-	}
-
-	void update_lib_dna(size_t l_indx, size_t chrom, size_t site, Base base) {
-		libraries[l_indx].dna[chrom].insert({site, base});
-	}
+  Base get_lib_dna(size_t l_indx, size_t chrom, size_t site) {
+    reference_map &rmap = libraries[l_indx].dna[chrom];
+    reference_map::const_iterator nt = rmap.find(site);
+    if(nt ==  rmap.end()) {
+      return REF;
+    }
+    else {
+      return nt->second;
+    }
+  }
+  
+  void update_lib_dna(size_t l_indx, size_t chrom, size_t site, Base base) {
+    libraries[l_indx].dna[chrom].insert({site, base});
+  }
 };
 
 

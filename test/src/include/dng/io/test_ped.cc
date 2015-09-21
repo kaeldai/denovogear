@@ -27,9 +27,9 @@ istreambuf_range(std::basic_istream<Elem, Traits> &in) {
 void confirm(dng::sim::Member *orig, dng::io::Pedigree &ped) {
   size_t found = 0;
   for(dng::io::Pedigree::Member m : ped.table()) {
-    if(ped.name(m.child) == orig->name) {
-      BOOST_CHECK(orig->mom == nullptr ? ped.name(m.mom) == "" : orig->mom->name == ped.name(m.mom)); 
-      BOOST_CHECK(orig->dad == nullptr ? ped.name(m.dad) == "" : orig->dad->name == ped.name(m.dad)); 
+    if(ped.name(m.child) == orig->id) {
+      BOOST_CHECK(orig->mom_ptr == nullptr ? ped.name(m.mom) == "" : orig->mom_ptr->id == ped.name(m.mom)); 
+      BOOST_CHECK(orig->dad_ptr == nullptr ? ped.name(m.dad) == "" : orig->dad_ptr->id == ped.name(m.dad)); 
       // Family names are not yet implements in ped.h
       // BOOST_CHECK(orig->family_name() == ped.name(m.fam));
       BOOST_CHECK(orig->sex == m.sex);
@@ -62,10 +62,10 @@ void run_test(dng::sim::SimBuilder &sim)
 
   // Check that pedigree is correct
   const dng::io::Pedigree::MemberTable family = ped.table();
-  std::vector<dng::sim::Member*> sim_fam = sim.getMembers();
+  std::vector<std::shared_ptr<dng::sim::Member>> sim_fam = sim.GetPedigree();
   BOOST_CHECK(family.size() == (sim_fam.size()+1)); // Check ped size
-  for(dng::sim::Member *m : sim_fam) {
-    confirm(m, ped); // compares each member with ped with the original data from the simulator
+  for(std::shared_ptr<dng::sim::Member> m : sim_fam) {
+    confirm(m.get(), ped); // compares each member with ped with the original data from the simulator
   }
 
   // delete the temporary ped file

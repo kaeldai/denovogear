@@ -29,17 +29,19 @@ void testVCF(dng::sim::SimBuilder &model) {
 
   // Compare simulated data members/libraries to what was parsed by ReadGroups.
   size_t lib_count = 0;
-  for(dng::sim::Member *m : model.getMembers()) {
-    for(dng::sim::Sample lib : m->libraries) {
+  //for(dng::sim::Member *m : model.getMembers()) {
+  for(dng::sim::member_ptr m : model.GetPedigree()) {
+    for(dng::sim::Library lib : m->libraries) {
       lib_count++;
-      dng::detail::DataBase::index<dng::rg::id>::type::iterator db = rgs.data().get<dng::rg::id>().find(lib.id_vcf());
+      dng::detail::DataBase::index<dng::rg::id>::type::iterator db = rgs.data().get<dng::rg::id>().find(lib.sample_name);
       BOOST_CHECK(db != rgs.data().get<dng::rg::id>().end());
       BOOST_CHECK(db->sample == lib.sm);
-      BOOST_CHECK(db->library == lib.id_vcf()); // ParseSamples uses the "id" for "lb" tag in VCF files.
+      BOOST_CHECK(db->library == lib.sample_name); // ParseSamples uses the "id" for "lb" tag in VCF files.
     }
   }
 
-  BOOST_CHECK(rgs.samples().size() == model.getMembers().size());
+  //BOOST_CHECK(rgs.samples().size() == model.getMembers().size());
+  BOOST_CHECK(rgs.samples().size() == model.GetPedigree().size());
   BOOST_CHECK(rgs.groups().size() == lib_count);
   BOOST_CHECK(rgs.libraries().size() == lib_count);
 
@@ -65,18 +67,20 @@ void testSAM(dng::sim::SimBuilder &model)
 
   // Check data
   size_t lib_count = 0;
-  for(dng::sim::Member *m : model.getMembers()) {
-    for(dng::sim::Sample lib : m->libraries) {
+  //  for(dng::sim::Member *m : model.getMembers()) {
+  for(dng::sim::member_ptr m : model.GetPedigree()) {
+    for(dng::sim::Library lib : m->libraries) {
       lib_count++;
       
-      dng::detail::DataBase::index<dng::rg::id>::type::iterator db = rgs.data().get<dng::rg::id>().find(lib.id_sam());
+      dng::detail::DataBase::index<dng::rg::id>::type::iterator db = rgs.data().get<dng::rg::id>().find(lib.id);
       BOOST_CHECK(db != rgs.data().get<dng::rg::id>().end());
       BOOST_CHECK(db->sample == lib.sm);
-      BOOST_CHECK(db->library == lib.id_sam());//lib.sm + "-" + lib.lb);
+      BOOST_CHECK(db->library == lib.id);//lib.sm + "-" + lib.lb);
     }
   }
 
-  BOOST_CHECK(rgs.samples().size() == model.getMembers().size());
+  //BOOST_CHECK(rgs.samples().size() == model.getMembers().size());
+  BOOST_CHECK(rgs.samples().size() == model.GetPedigree().size());
   BOOST_CHECK(rgs.groups().size() == lib_count);
   BOOST_CHECK(rgs.libraries().size() == lib_count);
 
@@ -108,7 +112,6 @@ BOOST_AUTO_TEST_CASE(Test_FamilyTree_SAM)
   dng::sim::FamilyTree ft;
   testSAM(ft);
 }
-
 
 BOOST_AUTO_TEST_CASE(Test_ExtendedFamily_VCF)
 {
