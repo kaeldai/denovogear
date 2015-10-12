@@ -426,7 +426,7 @@ protected:
 class TestCases : public SimBuilder { 
 	void createSeqData() {	}
 
-	std::vector<Base> baseCall(Library &lib, size_t site) { }
+	std::vector<Base> baseCall(Library &lib, size_t site) { return {}; }
 	
 	void setReference(std::string &seqence, std::string &chrom, size_t start_pos) {	}
 
@@ -447,8 +447,10 @@ public:
 
   Trio(){
     AddTrio("NA001", dng::sim::Gender::Male, "NA002", "NA003");
-    SetDefaultLibraries();
-    SetDefaultLibraries("L1");
+    //SetDefaultLibraries();
+    AddLibrary("NA001", "Solexa-135851");
+    AddLibrary("NA002", "Solexa-135852");
+    AddLibrary("NA003", "Solexa-135853");
   }
 };
 

@@ -93,7 +93,7 @@ struct Member {
   std::vector<Library> libraries;
 
   Member(const std::string &id_, const std::string &fam_id_, Gender sex_) : id(id_), family_id(fam_id_), sex(sex_) {
-    mom_ptr = nullptr;
+	mom_ptr = nullptr;
     dad_ptr = nullptr;
     hasDNA = false;
   }
@@ -134,23 +134,22 @@ struct Member {
     }
   }
   
-  void add_library(const std::string &lib_id, size_t depth) {
+  void add_library(const std::string &lb_tag, size_t depth) {
     // Check that library with same name doesn't already exists
     for(Library l : libraries) {
-      if(l.lb == lib_id) {
-	std::cerr << "WARNING. Member " + id + " already has a library with lb tag " + lib_id + ". Skipping!" << std::endl;
-	return;
+      if(l.lb == lb_tag) {
+    	  std::cerr << "WARNING. Member " + id + " already has a library with lb tag " + lb_tag + ". Skipping!" << std::endl;
+    	  return;
       }
     }
     
     Library lib;
-    lib.lb = lib_id;
+    lib.lb = lb_tag;
     lib.sm = id;
-    if(lib_id == id) {
+    if(lb_tag == id) {
       lib.id = id;
       lib.sample_name = id;
-    }
-    else {
+    } else {
       lib.id = lib.sm + "-" + lib.lb;
       lib.sample_name = lib.sm + ":" + lib.lb;
     }

@@ -66,36 +66,37 @@ public:
 
 
   
-  void AddTrio(const std::string &child, Gender sex, const std::string &mom, const std::string &dad, const std::string &family = "F1") {
-    member_ptr c = buildMember(child, sex, family);
-    member_ptr m = buildMember(mom, Gender::Female, family);
-    member_ptr d = buildMember(dad, Gender::Male, family);
+	void AddTrio(const std::string &child, Gender sex, const std::string &mom, const std::string &dad, const std::string &family = "F1") {
+		member_ptr c = buildMember(child, sex, family);
+		member_ptr m = buildMember(mom, Gender::Female, family);
+		member_ptr d = buildMember(dad, Gender::Male, family);
 
-    if(c == nullptr) {
-      // Throw error, Can't have a trio without a child
-      throw std::runtime_error("Attempting to create a trio without a child.");
-    }
+		if(c == nullptr) {
+			// Throw error, Can't have a trio without a child
+			throw std::runtime_error("Attempting to create a trio without a child.");
+		}
 
-    if(m != nullptr) {
-      if(c->mom_ptr != nullptr && c->mom_ptr->id != m->id) {
-	throw std::runtime_error("Failed to create child-mother relationship between " + c->id + " and " + m->id +
-				 ". The child already has mother " + c->mom_ptr->id);
-      }
-      else {
-	c->mom_ptr = m;
-      }	
-    }
+		if(m != nullptr) {
+			if(c->mom_ptr != nullptr && c->mom_ptr->id != m->id) {
+				throw std::runtime_error("Failed to create child-mother relationship between " + c->id + " and " + m->id +
+										 ". The child already has mother " + c->mom_ptr->id);
+			} else {
+				c->mom_ptr = m;
+				gametic_nodes_++;
+			}
+		}
 
-    if(d != nullptr) {
-      if(c->dad_ptr != nullptr && c->dad_ptr->id != d->id) {
-	throw std::runtime_error("Failed to create child-father relationship between " + c->id + " and " + d->id +
-				 ". The child already has mother " + c->dad_ptr->id);
-      }
-      else {
-	c->dad_ptr = d;
-      }	
-    }   
-  }
+		if(d != nullptr) {
+			if(c->dad_ptr != nullptr && c->dad_ptr->id != d->id) {
+				throw std::runtime_error("Failed to create child-father relationship between " + c->id + " and " + d->id +
+										 ". The child already has mother " + c->dad_ptr->id);
+			}
+			else {
+				c->dad_ptr = d;
+				gametic_nodes_++;
+			}
+		}
+	}
 
   /**
    *  Adds library to all members of the pedigree. LB and ID tags are the same as the sample 
@@ -157,7 +158,8 @@ public:
 
   // Publish a PED file containing all the pedigree information.
   template<typename Stream>
-    void publishPed(Stream &output) {
+  void publishPed(Stream &output, bool newick_formatted = false) {
+
     for(pedigree_map::const_iterator itr = pedigree.begin(); itr != pedigree.end(); ++itr) {
       Member *m = itr->second.get();
       std::string mom = (m->mom_ptr == nullptr ? PED_NOPARENT : m->mom_ptr->id);
@@ -168,7 +170,7 @@ public:
 	     << dad << "\t"
 	     << mom << "\t"
 	     << getGender(m->sex) << "\t"
-	     << m->family_id + m->id
+	     // << m->family_id + m->id
 	     << std::endl;
     }
   }
@@ -285,6 +287,10 @@ public:
     return mems;
   }
   
+  std::size_t gametic_nodes() {
+	  return gametic_nodes_;
+  }
+
     
   virtual ~SimBuilder() {  }
   
@@ -339,7 +345,7 @@ protected:
     std::stringstream hdr_txt;
     uint32_t chrom_len_ = static_cast<uint32_t>(2*start_pos_ + reference.size()); // take a guess of full contig length
     hdr_txt << "@HD\tVN:0.1\tSO:unknown\tGO:none" << std::endl;
-    hdr_txt << "@SQ\tSN" << chrom_ << "\tLN:" << chrom_len_;
+    hdr_txt << "@SQ\tSN" << chrom_ << "\tLN:" << chrom_len_ << std::endl;
     for(member_ptr m : mems) {
       for(Library &lib : m->libraries) {
 	hdr_txt << "@RG" << "\t"
@@ -514,6 +520,8 @@ protected:
   std::string chrom_; // name of chromosome/contig
   size_t start_pos_; // start location on contig
   int sam_seq_len_;
+
+  int gametic_nodes_ = 0;
 
 };
 

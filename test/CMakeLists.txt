@@ -68,7 +68,7 @@ endforeach(test)
 # unit test cases for the source files (src/lib). Requires manual linking
 
 # Test for the pedigree peeler (lib/pedigree.cc and include/dng/pedigree.cc)
-add_executable(test_pedigree EXCLUDE_FROM_ALL src/lib/test_pedigree.cc ../src/lib/pedigree.cc ../src/lib/newick.cc)
+add_executable(test_pedigree EXCLUDE_FROM_ALL src/lib/test_pedigree.cc ../src/lib/pedigree.cc ../src/lib/newick.cc ../src/lib/peeling.cc)
 set_target_properties(test_pedigree PROPERTIES CXX_STANDARD 11)
 set_target_properties(test_pedigree PROPERTIES CXX_STANDARD_REQUIRED ON)
 target_link_libraries(test_pedigree Threads::Threads)
