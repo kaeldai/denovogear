@@ -51,7 +51,7 @@ IF(NOT DEFINED DNG_VERSION_COMMIT OR DNG_VERSION_COMMIT STREQUAL "unknown")
     SET(DATA_PACKAGE "${DATA_PACKAGE}.${DNG_VERSION_PATCH}")
   ENDIF()
   SET(DATA_PACKAGE "${DATA_PACKAGE}.tar.gz")
-  SET(DOWNLOAD_URL "https://github.com/kaeldai/testdata/archive/${DATA_PACKAGE}")
+  SET(DOWNLOAD_URL "https://github.com/denovogear/testdata/archive/${DATA_PACKAGE}")
 ENDIF()
 
 IF(NOT DEFINED TEST_DATA_DIR)
@@ -66,7 +66,7 @@ IF(DEFINED DOWNLOAD_URL)
     PREFIX "testdata"
     EXCLUDE_FROM_ALL 1
     DOWNLOAD_DIR "${TEST_DATA_DIR}"
-    URL "https://github.com/kaeldai/testdata/archive/${DATA_PACKAGE}"
+    URL "https://github.com/denovogear/testdata/archive/${DATA_PACKAGE}"
     SOURCE_DIR "${TEST_DATA_DIR}"
     CONFIGURE_COMMAND ""
     BUILD_COMMAND ""
@@ -78,7 +78,7 @@ ELSE()
     PREFIX "testdata"
     EXCLUDE_FROM_ALL TRUE
     DOWNLOAD_DIR "${TEST_DATA_DIR}"
-    GIT_REPOSITORY "https://github.com/kaeldai/testdata.git"
+    GIT_REPOSITORY "https://github.com/denovogear/testdata.git"
     SOURCE_DIR "${TEST_DATA_DIR}"
     CONFIGURE_COMMAND ""
     BUILD_COMMAND ""

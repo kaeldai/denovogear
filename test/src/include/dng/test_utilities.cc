@@ -1,3 +1,4 @@
+#define BOOST_TEST_DYN_LINK
 #define BOOST_TEST_MODULE "dng::util::utilities.h"
 
 #include <boost/test/unit_test.hpp>
