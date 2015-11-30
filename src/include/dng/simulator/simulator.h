@@ -174,14 +174,14 @@ public:
 	     << std::endl;
     }
   }
-
   // Publish sequence or variant pedigree data to a file
   //  fname = output file name
   //  format = currently supports BAM, SAM, BCF, VCF
   //  scheme = number of files to put write to: SINGLE_FILE or PER_MEMBER
   //
   void publishData(const std::string &fname, SeqFormat format, DataScheme scheme = SINGLE_FILE) {
-    createSeqData();
+    if(seqdata_init == false)
+      createSeqData();
     
     if(scheme == SINGLE_FILE) {
       // Create a single file
@@ -220,7 +220,7 @@ public:
   //  seq = A contiguous nucleotide sequence of A/C/T/G/N's
   //  chrom = name of contig/chromosome.
   //  start_pos = start location of sequence along contig
-  virtual void setReference(std::string &seqence, std::string &chrom, size_t start_pos) {
+  virtual void setReference(const std::string &seqence, const std::string &chrom, size_t start_pos) {
     chrom_ = std::string(chrom);
     start_pos_ = start_pos;
     
@@ -228,7 +228,6 @@ public:
     for(int nt : seqence) {
       reference.push_back(char2base(nt));
     }
-    std::cout << reference.size() << std::endl;
   }
 
 
@@ -400,6 +399,7 @@ protected:
   }
 
   virtual void publishDataVCF(const char *file, const char *mode, const std::vector<member_ptr> &mems) {
+    std::cout << "publishDataVCF" << std::endl;
 
     // Create VCF header
     hts::bcf::File out(file, mode);
@@ -413,13 +413,14 @@ protected:
       }
     }
 
+
     out.WriteHeader();    
     
+
     // Go through each position in the reference and build a line in the VCF file
     size_t l_reference = reference.size();
     for(size_t pos  = 0; pos < l_reference; pos++) {
       Base ref = reference[pos];
-
 
       int gt_totals[4] = {0, 0, 0, 0}; // total num of A,C,G,Ts across all the libraries
       int total_reads = 0;
@@ -427,6 +428,7 @@ protected:
       for(size_t m = 0; m < mems.size(); m++) {
 	member_ptr mem = mems[m];
 	for(size_t l = 0; l < mem->libraries.size(); l++) {
+	  	
 	  std::vector<Base> reads = baseCall(mem->libraries[l], pos);
 	  int gt_tmp[4] = {0, 0, 0, 0};
 	  for(int r : reads) {
@@ -439,6 +441,7 @@ protected:
 	  gtcounts.push_back(gt_tmp[3]);
 	}
       }
+      
       // allele order should start with the ref, and include only those nucleotides which have a read
       std::vector<int> allele_order_map;
       allele_order_map.push_back(ref);
@@ -522,7 +525,7 @@ protected:
   int sam_seq_len_;
 
   int gametic_nodes_ = 0;
-
+  bool seqdata_init = false;
 };
 
 

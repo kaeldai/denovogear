@@ -23,6 +23,7 @@
 #include <unordered_map>
 #include <string>
 #include <vector>
+#include <set>
 #include <boost/format.hpp>
 #include <unordered_map>
 #include "dng/io/ped.h"
@@ -90,6 +91,7 @@ struct Member {
   
   // Used to keep track of differences between member's DNA and the reference. One for each chromatid and somatic vs gametic
   reference_map gametes[2];
+  std::set<size_t> gmutations[2];
   std::vector<Library> libraries;
 
   Member(const std::string &id_, const std::string &fam_id_, Gender sex_) : id(id_), family_id(fam_id_), sex(sex_) {
@@ -104,7 +106,9 @@ struct Member {
     if(chrom_num >= 2)
       throw std::runtime_error("Attempting to set base from more than diploidy DNA.");
     
+    std::cout << id << " mutation at " << site << std::endl;
     gametes[chrom_num].insert({site, base});
+    gmutations[chrom_num].insert(site);
   }
 
   
@@ -132,6 +136,11 @@ struct Member {
     else {
       return nt->second;
     }
+  }
+
+  bool is_gamete_mutation(size_t chromatid, size_t site) {
+    return gmutations[chromatid].find(site) != gmutations[chromatid].end();
+
   }
   
   void add_library(const std::string &lb_tag, size_t depth) {

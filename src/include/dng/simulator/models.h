@@ -40,7 +40,7 @@ typedef std::array<double, 16> genotype_dist;
 class DNGModel : public SimBuilder {
 public:
 
-	DNGModel() : ref_weight_(0.9), theta_(0.05), gametic_mu_(0.0001), somatic_mu_(0.0001), read_mu_(0.0001) {
+	DNGModel() : ref_weight_(0.9), theta_(0.05), gametic_mu_(0.001), somatic_mu_(0.0001), read_mu_(0.0001) {
 		ran_generator = std::mt19937(time(0));
 		nuc_freqs_ = {{0.3, 0.2, 0.2, 0.3}};
 	}
@@ -88,6 +88,7 @@ public:
 		if(genotype[1] == REF)
 			genotype[1] = ref;
 
+
 		//if(genotype[0] != ref || genotype[1] != ref) {
 		//	std::cout << "library " << lib.name << " has variance at site " << site << std::endl;
 		//}
@@ -95,8 +96,7 @@ public:
 		std::array<unsigned int, 4> prev_reads = {0, 0, 0, 0};
 		std::vector<Base> reads;
 		for(int d = 0; d < lib.depth; d++) {
-
-			// TODO: If homozygote don't call rand
+		        // TODO: If homozygote don't call rand
 			int chrom = rand() % 2;
 			Base allele = genotype[chrom];
 
@@ -109,9 +109,6 @@ public:
 
 			std::piecewise_constant_distribution<> dist(std::begin(interval), std::end(interval), probs.begin());
 			int read = floor(dist(ran_generator));
-			//if(read != allele) {
-			//	std::cout << lib.name << " read error : " << allele << " --> " << read << std::endl;
-			//}
 
 			prev_reads[read]++;
 			reads.push_back(index2Base[read]);
@@ -125,42 +122,75 @@ public:
 		initGameteDNA();
 		createLibraryMutations();
 		createReadWeights();
-
-		/*
-		/////////////////////////////////// For Testing Only //////////////////////////
-		std::cout << "       ";
-		for(int a = 0; a*10 < reference.size() && a < 10; a++) {
-			std::cout << a << "         ";
-		}
-		std::cout << std::endl;
-		std::cout << "ref:   ";
-		for(Base b : reference) {
-			std::cout << nt2char[b];
-		}
-		std::cout << std::endl;
-		for(Member *m : members) {
-			std::cout << m->name << " ";
-			for(size_t chrom : {0, 1}) {
-				for(int site = 0; site < reference.size(); site++) {
-					Base base = m->get_gamete_nt(chrom, site);
-					Base ref = reference[site];
-					if(base == REF)
-						std::cout << ' ';
-					else
-						std::cout << nt2char[base];
-				}
-				std::cout << std::endl;
-				std::cout << "       ";
-			}
-			std::cout << std::endl;
-		}
-		///////////////////////////////////
-		*/
+		seqdata_init = true;
+		
+		printGameticDNA();
 	}
 
 	~DNGModel() {
 
 	}
+
+	// For testing
+	void printGameticDNA() {
+	  std::string refstr = "ref";
+	  size_t mlen = refstr.size();
+	  for(std::shared_ptr<Member> m : GetPedigree()) {
+	    if(m->id.size() > mlen)
+	      mlen = m->id.size();
+	  }
+
+	  std::cout << std::string(mlen + 2, ' ');
+	  for(int a = 0; a*10 < reference.size() && a < 10; a++) {
+	    std::cout << a << std::string(9, ' ');
+	  }
+	  std::cout << std::endl;
+	  
+	  std::cout << refstr << ":" + std::string((mlen-refstr.size())+1, ' ');
+	  for(Base b : reference) {
+	    std::cout << nt2char[b];
+	  }
+	  std::cout << std::endl;
+
+	  for(std::shared_ptr<Member> m : GetPedigree()) {
+	    std::cout << m->id << ":" << std::string((mlen-m->id.size())+1, ' ');
+	     
+	    for(size_t chrom : {0, 1}) {
+	      if(chrom == 1) {
+		std::cout << std::string(mlen+2, ' ');
+	      }
+
+	      for(int site = 0; site < reference.size(); site++) {
+		Base base = m->get_gamete_nt(chrom, site);
+		Base ref = reference[site];
+
+		// For children, need to distinguish parent heterozyosity (upper case) vs gametic mutation (lower case)
+		if(m->mom_ptr != nullptr && m->dad_ptr !=  nullptr) {
+		  if(m->is_gamete_mutation(chrom, site)) {
+		    // gametic mutation
+		    std::cout << (char)std::tolower(nt2char[base]);
+		  }
+		  else if(base != Base::REF){
+		    // heterozygote site inherited from 
+		    std::cout << nt2char[base];
+		  }
+		  else {
+		    std::cout << " ";
+		  }
+		}
+		else {
+		  // for founders, just show difference from the reference.
+		  if(base == Base::REF)
+		    std::cout << ' ';
+		  else
+		    std::cout << nt2char[base];
+		}
+	      }
+	      std::cout << std::endl;
+	    }
+	  }	  
+	}
+
 
 protected:
 
@@ -221,6 +251,7 @@ protected:
 		for(Base ref : {A, C, G, T}) {
 			for(Base allele : {A, C, G, T}) {
 				std::array<double, 5> &weights = read_err_weights[ref][allele];
+				weights = {err, err, err, err};
 				weights[allele] = match;
 				weights[ref] *= ref_bias;
 				weights[4] = weights[0] + weights[1] + weights[2] + weights[3];
@@ -316,9 +347,12 @@ protected:
 		// We expect there to be "ref_len * mu" sites of mutations. At every potential site of mutation there is a 1/4th chance
 		// the randomly selected new NT matches the old. By solving for N in "N*3/4 = ref_len*mu", N tells us the number of potential
 		// sites of mutations we should iterate through
+		gametic_mu_ = 0.1;
 		size_t l_reference = reference.size();
 		size_t n_mutations = ceil((l_reference*gametic_mu_+1)*1.333333); // Added +1 term to get some variance when expected mut sites is less than 3/4
-
+		std::cout << "gametic_mu_ = " << gametic_mu_ << std::endl;
+		std::cout << "l_reference = " << l_reference << std::endl;
+		std::cout << n_mutations << std::endl;
 
 		// Use the geometric distribution to determine, based on gametic mutation prob, how many sites away from some start position
 		// is the next mutation. To prevent many mutations bunching up and potentially overwriting each other we update the start
@@ -406,8 +440,8 @@ protected:
 
 
 protected:
-	double ref_weight_; // weight given to reference
-	double theta_; // population diversity
+	double ref_weight_ = 1.0; // weight given to reference
+	double theta_ = 0.001; // population diversity
 	std::array<double, 4> nuc_freqs_ = {{0.3, 0.2, 0.2, 0.3}}; // nucleotide freq's in A,C,G,T order
 	double gametic_mu_ = 0.0001; // prob of gamete cell line mutation
 	double somatic_mu_ = 0.0001; // prob of somatic cell mutation
