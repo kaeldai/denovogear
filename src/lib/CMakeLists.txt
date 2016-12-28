@@ -15,6 +15,7 @@ add_library(libdng STATIC
   task/call.cc
   task/loglike.cc
   task/pileup.cc
+  task/sim.cc
 )
 
 target_include_directories(libdng PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../include")
